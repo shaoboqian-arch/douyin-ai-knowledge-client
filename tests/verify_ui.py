@@ -31,6 +31,7 @@ def check(name, cond, detail=""):
 
 
 def texts(widget):
+    import tkinter as tk
     out = []
     try:
         for w in widget.winfo_children():

@@ -6,7 +6,7 @@
 
 采集 · 账号硬校验 · 增量对比 · 两级分类 · Excel/CSV · Obsidian · 体检 · 入库报告
 
-![Version](https://img.shields.io/badge/version-V0.1.0-fe2c55.svg)
+![Version](https://img.shields.io/badge/version-V0.1.1-fe2c55.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-brightgreen.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab.svg)
 ![GUI](https://img.shields.io/badge/GUI-Tkinter-25f4ee.svg)
@@ -122,12 +122,12 @@ export-<范围>-<时间戳>/
 
 ## 下载安装
 
-当前版本 **V0.1.0**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
+当前版本 **V0.1.1**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
 
 | 安装包 | 说明 |
 |:---|:---|
-| `*-Setup-V0.1.0.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
-| `*-V0.1.0-portable.zip` | 解压后双击即用，不写注册表 |
+| `*-Setup-V0.1.1.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
+| `*-V0.1.1-portable.zip` | 解压后双击即用，不写注册表 |
 
 **前置条件**
 

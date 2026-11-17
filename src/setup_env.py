@@ -195,6 +195,7 @@ class Setup:
         self.cfg["expect_nickname"] = self.probed.get("nickname", "")
         self.account.set(self.probed.get("nickname") or self.probed["sec_uid"])
         self.set_state("已记录这个账号；以后采集到别的账号会自动中止，不重建交付物。", CYAN)
+        self.refresh()
 
     def refresh_obsidian(self):
         ok = bool(self.obsidian.get("installed"))

@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.join(APP, "src"))
 sys.path.insert(0, HERE)
 
 import _fixture  # noqa: E402
+from common import VERSION  # noqa: E402
 
 FAILS = []
 PASS = 0
@@ -82,7 +83,7 @@ def main():
         res = r.get("result", {})
         check("回显协议版本", res.get("protocolVersion") == "2025-06-18", str(res)[:200])
         check("serverInfo 名称正确", res.get("serverInfo", {}).get("name") == "douyin-fav-sync")
-        check("serverInfo 版本为 0.1.0", res.get("serverInfo", {}).get("version") == "0.1.0")
+        check(f"serverInfo 版本为 {VERSION}", res.get("serverInfo", {}).get("version") == VERSION)
         check("声明 tools 能力", "tools" in res.get("capabilities", {}))
         check("带 instructions", bool(res.get("instructions")))
         c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
