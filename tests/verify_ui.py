@@ -171,7 +171,7 @@ def main():
     root.update()
     check("超过 200 条时标题说明只显示最近 200",
           "只显示最近 200 条" in app.gap_title.cget("text")
-          and "_待加工.csv" in app.gap_title.cget("text"),
+          and "导出报告" in app.gap_title.cget("text"),
           app.gap_title.cget("text"))
     check("树只插入 200 行", len(app.tree.get_children()) == 200,
           str(len(app.tree.get_children())))

@@ -63,7 +63,7 @@ def test_format():
           f"{len(out)} {out[0][0] if out else ''} {out[-1][0] if out else ''}")
     check("超过 200 时标题写明只显示最近 200 条",
           "只显示最近 200 条" in common.gap_heading(201)
-          and "_待加工.csv" in common.gap_heading(201),
+          and "导出报告" in common.gap_heading(201),
           common.gap_heading(201))
     check("不超过 200 时标题为全量计数", common.gap_heading(1) == "待加工 1")
     check("计数用千分位", common.gap_heading(1284, shown=2000) == "待加工 1,284",
@@ -126,7 +126,7 @@ def test_retry_cancel():
               (not r.get("ok")) and "已停止" in (r.get("error") or ""),
               str(r)[:240])
         check("停止后不写出交付清单",
-              not os.path.isfile(os.path.join(r.get("batch_path") or "", "_导出清单.csv")))
+              not os.path.isfile(os.path.join(r.get("batch_path") or "", "_导出报告.md")))
 
         with open(os.path.join(project, "make_tables.py"), "w", encoding="utf-8") as f:
             f.write("# -*- coding: utf-8 -*-\nimport time, sys\ntime.sleep(30)\n"

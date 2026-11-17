@@ -84,10 +84,12 @@ def main():
         check("md 数 = 范围内条数", len(ids) == len(expect), f"{len(ids)} vs {len(expect)}")
         check("作品ID 集合完全一致",
               sorted(ids) == sorted(str(x.get("作品ID")) for x in expect))
-        check("清单行数一致", len(manifest.read_manifest(
-            os.path.join(batch, "_导出清单.csv"))) == len(expect))
-        check("待加工行数一致", len(manifest.read_manifest(
-            os.path.join(batch, "_待加工.csv"))) == r.get("gap_count"))
+        rep = manifest.read_report(batch)
+        check("报告明细行数一致", len(rep["items"]) == len(expect))
+        check("报告作品ID集合一致",
+              sorted(x["作品ID"] for x in rep["items"]) ==
+              sorted(str(x.get("作品ID")) for x in expect))
+        check("待加工行数一致", len(rep["gaps"]) == r.get("gap_count"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

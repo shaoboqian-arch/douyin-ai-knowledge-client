@@ -112,7 +112,7 @@ def install(dest, no_shortcut=False, progress=None):
             f"# {APP_NAME} V{VERSION}\n\n"
             "首次运行点主按钮「初始化本机环境」：选项目目录 → 校验抖音账号并采用 → 确认知识库目录。\n\n"
             "之后选交付目录与发布时间范围（留空表示全部），点「开始整理」。\n"
-            "每轮新建带时间戳的批次目录，绝不覆盖已有文件；详细结果见批次里的 _导出说明.txt。\n\n"
+            "每轮新建带时间戳的批次目录，绝不覆盖已有文件；详细结果见批次里的《导出报告.md》。\n\n"
             "MCP：把 mcp配置.json 里 douyin-fav-sync 这一个键合并进 `~/.workbuddy/mcp.json` 已有的 "
             "mcpServers（不要整份覆盖），保存后到连接器管理页点「信任」；接入后调用 dy_status 验证。\n")
 

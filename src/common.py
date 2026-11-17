@@ -129,7 +129,7 @@ def gap_heading(n, shown=200):
     except (TypeError, ValueError):
         shown = 200
     if n > shown:
-        return f"待加工 {n:,}（只显示最近 {shown} 条，全集见批次里的 _待加工.csv）"
+        return f"待加工 {n:,}（只显示最近 {shown} 条，全集见批次里的《导出报告》）"
     return f"待加工 {n:,}"
 
 

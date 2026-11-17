@@ -142,7 +142,7 @@ def main():
         check("导出 ok", data.get("ok") is True, (r.stdout or "")[:200])
         check("批次存在", os.path.isdir(data.get("batch_path", "")))
         check("写出 4 个 md", len([1 for b, _d, fs in os.walk(data.get("batch_path", ""))
-                                for f in fs if f.endswith(".md")]) == 4)
+                                for f in fs if f.endswith(".md") and f != "_导出报告.md"]) == 4)
 
         print(f"== {label} 参数错误 ==")
         r = run(base + ["--cli", "--nope"], env)

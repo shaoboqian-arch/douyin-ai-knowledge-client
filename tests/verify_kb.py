@@ -166,7 +166,10 @@ def main():
         check("报告说明 Obsidian 未启用", "未启用" in txt["重建交付物"]["结果"],
               txt["重建交付物"]["结果"])
         check("体检标记为跳过", txt["audit 体检"]["状态"] == "skip")
-        check("报告 md 已落盘", os.path.isfile(os.path.join(r["batch_path"], "_入库报告.md")))
+        export_md = os.path.join(r["batch_path"], "_导出报告.md")
+        check("入库结果并入导出报告",
+              os.path.isfile(export_md) and "## 入库结果" in
+              open(export_md, encoding="utf-8").read())
         check("报告 json 已落盘", os.path.isfile(os.path.join(r["batch_path"], "_入库报告.json")))
 
         print("== 启用知识库的整理 ==")

@@ -7,10 +7,8 @@
     ├─ 01_AI笔记/<AI类别>/<序号>_<发布日>_<作者>_<标题>.md
     ├─ 02_其他收藏/<...>.md
     ├─ 03_待判定/<...>.md
-    ├─ _导出清单.csv        范围内每一条一行
-    ├─ _导出报告.csv        每个写出的文件一行（含字节数与状态）
-    ├─ _待加工.csv          还需要外部 AI 加工的条目与原因
-    └─ _导出说明.txt        给人看的本批说明
+    ├─ _导出报告.md         本批唯一的说明文档：计数 / 子类别 / 待加工 / 明细 / 入库结果
+    └─ _整理状态.json       程序内部状态（隐藏，用于续跑）
 
 **不覆盖**：批次目录必须是新建的空目录；同名文件一律加 ~2 后缀，绝不改写已有文件。
 """
@@ -32,11 +30,6 @@ RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | \
 CATS = ("AI编程与开发", "AI效率办公", "大模型与行业资讯", "AI绘画与图像",
         "其他AI相关", "AI视频与数字人", "科普与学习")
 
-MANIFEST_COLUMNS = ["序号", "类型", "发布日期", "作者", "标题", "收藏夹", "AI相关",
-                    "AI类别", "子类别", "子类别依据", "核心内容", "内容介绍", "概念",
-                    "作品链接", "作品ID", "输出路径", "状态"]
-REPORT_COLUMNS = ["序号", "文件名", "状态", "字节", "来源"]
-GAP_COLUMNS = ["序号", "作品ID", "标题", "原因", "建议"]
 
 
 def clean_name(text, limit=48):
@@ -267,64 +260,151 @@ def build(rows, batch_dir, frm="", to="", transcripts_dir="", concepts_map=None,
                      "ok": not reasons, "seq": seq, "path": rel,
                      "ai": g == "ai"})
 
-    _write_csv(os.path.join(batch_dir, "_导出清单.csv"), MANIFEST_COLUMNS, manifest)
-    _write_csv(os.path.join(batch_dir, "_导出报告.csv"), REPORT_COLUMNS, report)
-    _write_csv(os.path.join(batch_dir, "_待加工.csv"), GAP_COLUMNS, gaps)
-    with open(os.path.join(batch_dir, "_导出说明.txt"), "w", encoding="utf-8") as f:
-        f.write(_explain(frm, to, stats, gaps, len(manifest), batch_dir, manifest))
+    _write_report_md(batch_dir, frm, to, stats, gaps, manifest, report)
 
     return {"ok": True, "batch_path": batch_dir, "total": len(manifest),
             "stats": stats, "gaps": gaps, "files": len(report)}
 
 
-def _write_csv(path, columns, rows):
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=columns)
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: r.get(k, "") for k in columns})
+REPORT_NAME = "_导出报告.md"
 
 
-def _explain(frm, to, stats, gaps, total, batch_dir, manifest_rows=None):
+def _md(value):
+    return str(value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _write_report_md(batch_dir, frm, to, stats, gaps, items, files):
     scope = f"{frm or '最早'} ~ {to or '最新'}" if (frm or to) else "全部收藏"
-    subs = Counter(r.get("子类别") or "" for r in (manifest_rows or []) if r.get("子类别"))
+    subs = Counter(r.get("子类别") or "" for r in items if r.get("子类别"))
     lines = [
-        f"抖音收藏整理 · 本批交付说明",
+        "# 导出报告",
         "",
-        f"交付目录：{batch_dir}",
-        f"生成时间：{dt.datetime.now():%Y-%m-%d %H:%M:%S}",
-        f"发布时间范围：{scope}（起止都含当天；留空表示全部）",
-        f"本批条目：{total}",
+        f"- 生成时间：{dt.datetime.now():%Y-%m-%d %H:%M:%S}",
+        f"- 发布时间范围：{scope}（起止都含当天；留空表示全部）",
+        f"- 本批条目：{len(items)}",
+        f"- 交付目录：`{batch_dir}`",
         "",
-        "目录含义：",
-        "  01_AI笔记/<AI类别>/<子类别>/   AI 相关条目，两级分类",
-        "  02_其他收藏/<子类别>/          判定为与 AI 无关的条目，按内容子类别分",
-        "  03_待判定/            AI 判定尚未完成的条目",
+        "## 计数",
         "",
-        "计数：",
-        f"  视频 {stats['video']['total']} 条（已写完 {stats['video']['ok']}）",
-        f"  图集 {stats['album']['total']} 条（已写完 {stats['album']['ok']}）",
-        f"  其中 AI 笔记 {stats['ai']['total']} 条（已写完 {stats['ai']['ok']}）",
-        f"  待加工 {len(gaps)} 条",
+        "| 类别 | 总数 | 已写出 | 待加工 |",
+        "|---|---:|---:|---:|",
+        f"| 视频 | {stats['video']['total']} | {stats['video']['ok']} | {stats['video']['gap']} |",
+        f"| 图集 | {stats['album']['total']} | {stats['album']['ok']} | {stats['album']['gap']} |",
+        f"| 其中 · AI 笔记 | {stats['ai']['total']} | {stats['ai']['ok']} | {stats['ai']['gap']} |",
         "",
-        "子类别分布（前 12）：",
+        "## 子类别分布",
+        "",
+        "| 子类别 | 条数 |",
+        "|---|---:|",
     ]
-    for name, n in subs.most_common(12):
-        lines.append(f"  {name} {n} 条")
+    for name, n in subs.most_common():
+        lines.append(f"| {_md(name)} | {n} |")
+    if not subs:
+        lines.append("| （无） | 0 |")
+
+    lines += ["", f"## 待加工（{len(gaps)}）", ""]
+    if gaps:
+        lines += ["| 序号 | 标题 | 缺什么 |", "|---|---|---|"]
+        for g in gaps:
+            lines.append(f"| {g.get('序号','')} | {_md(str(g.get('标题',''))[:80])} | {_md(g.get('原因',''))} |")
+    else:
+        lines.append("本批没有待加工条目。")
+
+    lines += ["", f"## 明细（{len(items)}）", "",
+              "| 序号 | 发布日期 | 类型 | AI | 作者 | 标题 | AI类别 | 子类别 | 作品ID | 状态 | 文件 |",
+              "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for r in items:
+        lines.append("| " + " | ".join([
+            _md(r.get("序号")), _md(r.get("发布日期")), _md(r.get("类型")),
+            _md(r.get("AI相关")), _md(r.get("作者")), _md(str(r.get("标题") or "")[:70]),
+            _md(r.get("AI类别")), _md(r.get("子类别")), _md(r.get("作品ID")),
+            _md(r.get("状态")),
+            f"`{_md(r.get('输出路径'))}`"]) + " |")
+
     lines += [
         "",
-        "待加工是什么：",
-        "  这是本项目需要外部 AI 处理的部分（判定 / 转写 / 百字介绍 / 概念标引），",
-        "  不是导出失败。清单在 _待加工.csv，逐条写了缺哪一步。",
-        "  补齐后重新点一次「开始整理」，新一轮批次会包含更新后的内容。",
+        "## 说明",
         "",
-        "不覆盖：",
-        "  每次整理都新建带时间戳的批次目录；本目录内同名文件会被加 ~2 后缀，",
-        "  不会改写任何已有文件。",
+        "- 目录：`01_AI笔记/<AI类别>/<子类别>/`、`02_其他收藏/<子类别>/`、`03_待判定/`",
+        "- 待加工：缺 AI 判定 / 转写 / 百字介绍 / 概念标引的条目，补齐后重新同步即可",
+        "- 每次同步都新建带时间戳的批次目录；同名文件加 `~2` 后缀，不改写已有文件",
+        "- `_整理状态.json` 是程序内部状态（已设为隐藏），用于续跑与入库报告，不需要手工看",
+        "",
     ]
-    return "\n".join(lines) + "\n"
+    with open(os.path.join(batch_dir, REPORT_NAME), "w", encoding="utf-8",
+              newline="\n") as f:
+        f.write("\n".join(lines))
 
 
-def read_manifest(path):
-    with open(path, encoding="utf-8-sig", newline="") as f:
-        return list(csv.DictReader(f))
+def _split_row(line):
+    """按未转义的 | 切分，标题里的 \\| 还原成 |。"""
+    cells, buf, esc = [], [], False
+    for ch in line.strip().strip("|"):
+        if esc:
+            buf.append(ch)
+            esc = False
+        elif ch == "\\":
+            esc = True
+        elif ch == "|":
+            cells.append("".join(buf).strip())
+            buf = []
+        else:
+            buf.append(ch)
+    cells.append("".join(buf).strip())
+    return cells
+
+
+def _table(section):
+    rows = []
+    for line in section.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = _split_row(line)
+        if not cells or all(set(c) <= set("-: ") for c in cells):
+            continue
+        rows.append(cells)
+    return rows
+
+
+def read_report(batch_dir):
+    """读回《导出报告》的结构化内容，供复检使用。"""
+    path = os.path.join(batch_dir, REPORT_NAME)
+    text = open(path, encoding="utf-8").read()
+    parts = {}
+    title = ""
+    for block in text.split("\n## "):
+        if block.startswith("# "):
+            title = block.splitlines()[0][2:].strip()
+            continue
+        head = block.splitlines()[0].strip()
+        parts[head] = block
+    meta = {}
+    for line in text.splitlines():
+        if line.startswith("- ") and "：" in line:
+            k, v = line[2:].split("：", 1)
+            meta[k.strip()] = v.strip()
+    counts = {}
+    for row in _table(parts.get("计数", ""))[1:]:
+        if len(row) >= 4:
+            counts[row[0]] = {"total": int(row[1]), "ok": int(row[2]), "gap": int(row[3])}
+    subs = {}
+    for row in _table(parts.get("子类别分布", ""))[1:]:
+        if len(row) >= 2 and row[0] != "（无）":
+            subs[row[0]] = int(row[1])
+    gaps = []
+    for row in _table(parts.get("待加工（0）", ""))[1:]:
+        gaps.append(row)
+    gap_section = next((v for k, v in parts.items() if k.startswith("待加工（")), "")
+    gaps = [{"序号": r[0], "标题": r[1], "原因": r[2]}
+            for r in _table(gap_section)[1:] if len(r) >= 3]
+    items = []
+    item_section = next((v for k, v in parts.items() if k.startswith("明细（")), "")
+    for r in _table(item_section)[1:]:
+        if len(r) < 11:
+            continue
+        items.append({"序号": r[0], "发布日期": r[1], "类型": r[2], "AI相关": r[3],
+                      "作者": r[4], "标题": r[5], "AI类别": r[6], "子类别": r[7],
+                      "作品ID": r[8], "状态": r[9], "输出路径": r[10].strip("`")})
+    return {"title": title, "meta": meta, "counts": counts, "subs": subs,
+            "gaps": gaps, "items": items}

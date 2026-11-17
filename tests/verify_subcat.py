@@ -115,8 +115,7 @@ def main():
         batch = os.path.join(tmp, "b")
         res = manifest.build(rows, batch, concepts_map={"2001": ["x"]})
         check("批次生成", res.get("ok"), str(res)[:200])
-        paths = [r["输出路径"] for r in manifest.read_manifest(
-            os.path.join(batch, "_导出清单.csv"))]
+        paths = [r["输出路径"] for r in manifest.read_report(batch)["items"]]
         check("AI 目录含两级类别", any(p.startswith("01_AI笔记/AI编程与开发/开源项目与免费资源/")
                                       for p in paths), str(paths))
         check("非 AI 目录含子类别", any(p.startswith("02_其他收藏/美食/") for p in paths),

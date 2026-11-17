@@ -124,8 +124,8 @@ def main():
         batch = body.get("batch_path", "")
         check("批次目录存在", os.path.isdir(batch), batch)
         check("写出 4 个 md", len([1 for b, _d, fs in os.walk(batch) for f in fs
-                                if f.endswith(".md")]) == 4)
-        check("清单存在", os.path.isfile(os.path.join(batch, "_导出清单.csv")))
+                                if f.endswith(".md") and f != "_导出报告.md"]) == 4)
+        check("报告存在", os.path.isfile(os.path.join(batch, "_导出报告.md")))
 
         r = c.call("tools/call", {"name": "dy_export", "arguments": {}})
         body = json.loads(r["result"]["content"][0]["text"])

@@ -38,7 +38,7 @@ def md_files(root):
     out = []
     for base, _dirs, files in os.walk(root):
         for f in files:
-            if f.endswith(".md"):
+            if f.endswith(".md") and f != manifest.REPORT_NAME:
                 out.append(os.path.join(base, f))
     return out
 
@@ -85,8 +85,7 @@ def main():
         check("只导出成功", r1.get("ok"), str(r1)[:300])
         b1 = r1.get("batch_path", "")
         check("批次目录存在", os.path.isdir(b1), b1)
-        check("清单 4 行（范围外 1 条被排除）", len(manifest.read_manifest(
-            os.path.join(b1, "_导出清单.csv"))) == 4)
+        check("清单 4 行（范围外 1 条被排除）", len(manifest.read_report(b1)["items"]) == 4)
         check("写出 4 个 md", len(md_files(b1)) == 4, str(len(md_files(b1))))
         check("视频 3 / 图集 1", r1["stats"]["video"]["total"] == 3
               and r1["stats"]["album"]["total"] == 1, str(r1["stats"]))
@@ -119,7 +118,7 @@ def main():
         r4 = engine.sync(os.path.join(tmp, "out3"))
         check("账号不符被拒", not r4.get("ok") and "账号不符" in r4.get("error", ""), r4.get("error", ""))
         check("账号不符时不写交付清单", not os.path.isfile(os.path.join(
-            r4.get("batch_path", ""), "_导出清单.csv")))
+            r4.get("batch_path", ""), manifest.REPORT_NAME)))
 
         os.environ["FAKE_SEC"] = _fixture.SEC
         os.environ["FAKE_COUNT"] = "3"
@@ -130,7 +129,7 @@ def main():
         check("条数低于下限被拒", not r5.get("ok") and "条数异常" in r5.get("error", ""),
               r5.get("error", ""))
         check("条数异常时不写交付清单", not os.path.isfile(os.path.join(
-            r5.get("batch_path", ""), "_导出清单.csv")))
+            r5.get("batch_path", ""), manifest.REPORT_NAME)))
 
         print("== 续跑 ==")
         r6 = engine.retry(r4.get("batch_path", ""))
@@ -162,7 +161,7 @@ def main():
         rr = mf.build(_fixture.ROWS, busy)
         check("非空目录拒绝写入", not rr.get("ok") and "拒绝覆盖" in rr.get("error", ""))
         check("用户文件未被删", os.path.isfile(os.path.join(busy, "用户自己的文件.txt")))
-        check("没有生成说明文件", not os.path.isfile(os.path.join(busy, "_导出说明.txt")))
+        check("没有生成报告", not os.path.isfile(os.path.join(busy, manifest.REPORT_NAME)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

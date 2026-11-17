@@ -95,6 +95,11 @@ def _write_state(batch, payload):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetFileAttributesW(path, 0x02)   # 内部状态，隐藏
+    except Exception:
+        pass
     return path
 
 
@@ -463,7 +468,8 @@ def sync(dest, frm="", to="", on_event=None, on_progress=None, cancel=None,
             state.get("ids") or {}, rows, snap.get("prev_rows") or [],
             load_concepts(project), audit_rc, audit_lines,
             kb_enabled=kb_enabled, mode="sync")
-        kbreport.write(batch, report)
+        kbreport.write(batch, report,
+                       append_to=os.path.join(batch, manifest.REPORT_NAME))
     except Exception as e:
         report = {"ok": False, "error": f"{type(e).__name__}: {e}", "rows": []}
     state.update(stage="done", ok=True, finished_at=_now(),
@@ -629,7 +635,8 @@ def retry(batch_path, on_event=None, on_progress=None, cancel=None):
             new_state.get("ids") or {}, rows, [],
             load_concepts(project), audit_rc, audit_lines,
             kb_enabled=kb_enabled, mode="retry")
-        kbreport.write(batch, report)
+        kbreport.write(batch, report,
+                       append_to=os.path.join(batch, manifest.REPORT_NAME))
     except Exception as e:
         report = {"ok": False, "error": f"{type(e).__name__}: {e}", "rows": []}
     new_state.update(stage="done", ok=True, finished_at=_now(),

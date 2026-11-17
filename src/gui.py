@@ -731,7 +731,7 @@ class App:
             else:
                 new = int(payload.get("new_count") or 0)
                 self.set_state(f"完成 · {total:,} 条 · 新增 {new:,} · 待加工 {gaps:,}", CYAN)
-            self._show_hint(f"待加工 {gaps:,} 条：明细见 _待加工.csv；补齐后重新整理。" if gaps else "")
+            self._show_hint(f"待加工 {gaps:,} 条：明细见批次《导出报告》的待加工一节；补齐后重新整理。" if gaps else "")
         else:
             err = payload.get("error") or "操作失败"
             self.set_state(err, ERR)
@@ -826,7 +826,7 @@ class App:
 def gap_heading(n):
     if not n:
         return "待加工 0"
-    text = f"待加工 {n:,}（缺 AI 判定 / 转写 / 介绍 / 概念，见 _待加工.csv）"
+    text = f"待加工 {n:,}（缺 AI 判定 / 转写 / 介绍 / 概念，见《导出报告》）"
     if n > 200:
         text += " · 只显示最近 200 条"
     return text

@@ -158,7 +158,7 @@ def build(project, kb_dir, cfg, collect, ids, rows, prev_rows, concepts_map,
         tr_text, tr_state = f"{tr_ok}/{len(new_ai_videos)} 就绪，0 失败", OK
     else:
         tr_text = (f"{tr_ok}/{len(new_ai_videos)} 就绪，缺 {len(new_ai_videos) - tr_ok} 条"
-                   "（客户端不转写，见 _待加工.csv）")
+                   "（客户端不转写，见《导出报告》待加工一节）")
         tr_state = WARN
 
     intro_ok = sum(1 for r in new_ai if str(r.get("内容介绍") or "").strip())
@@ -278,13 +278,36 @@ def render_md(report):
     return "\n".join(lines)
 
 
-def write(batch_dir, report):
+def render_section(report):
+    """作为《导出报告》的一节渲染，不重复一级标题与元信息。"""
+    lines = ["## 入库结果", ""]
+    for r in report.get("rows") or []:
+        icon = {"ok": "✅", "warn": "⚠️", "skip": "➖"}.get(r.get("状态"), "")
+        text = str(r.get("结果") or "").replace("|", "\\|")
+        lines.append(f"| {r.get('环节')} | {icon} {text} |")
+    lines.insert(2, "| 环节 | 结果 |")
+    lines.insert(3, "|---|---|")
+    return "\n".join(lines) + "\n"
+
+
+def write(batch_dir, report, append_to=""):
     os.makedirs(batch_dir, exist_ok=True)
-    with open(os.path.join(batch_dir, "_入库报告.json"), "w", encoding="utf-8") as f:
+    path = os.path.join(batch_dir, "_入库报告.json")
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
-    with open(os.path.join(batch_dir, "_入库报告.md"), "w", encoding="utf-8", newline="\n") as f:
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetFileAttributesW(path, 0x02)
+    except Exception:
+        pass
+    if append_to and os.path.isfile(append_to):
+        with open(append_to, "a", encoding="utf-8", newline="\n") as f:
+            f.write("\n" + render_section(report))
+        return append_to
+    md = os.path.join(batch_dir, "_入库报告.md")
+    with open(md, "w", encoding="utf-8", newline="\n") as f:
         f.write(render_md(report))
-    return os.path.join(batch_dir, "_入库报告.md")
+    return md
 
 
 def load(batch_dir):
