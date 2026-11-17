@@ -6,10 +6,10 @@
 
 采集 · 账号硬校验 · 增量对比 · 两级分类 · Excel/CSV · Obsidian · 体检 · 入库报告
 
-![Version](https://img.shields.io/badge/version-V0.1.5-19c8b9.svg)
+![Version](https://img.shields.io/badge/version-V0.1.6-19c8b9.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-brightgreen.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab.svg)
-![GUI](https://img.shields.io/badge/GUI-Tkinter-25f4ee.svg)
+![GUI](https://img.shields.io/badge/GUI-Tkinter-19c8b9.svg)
 
 [下载安装](#下载安装) · [操作说明](#操作说明) · [工程说明](docs/工程说明.md) · [问题反馈](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/issues)
 
@@ -28,6 +28,20 @@
 
 它不是一个独立的采集器：采集与重建调用你本机已有的抖音项目（TikTokDownloader 二次开发版）
 及其 `.venv`，客户端只负责编排、门禁与交付。**Cookie 不复制、不上传**，仍留在原项目里。
+
+## V0.1.6 本版变更
+
+对着 V0.1.5 的 F-1~F-12 缺陷清单逐条复核、整改，并把每一项钉进新的第 15 步「F 清单闭环」门禁。
+
+- **账号硬门不再放行**：采集日志解析不到 `sec_uid` 或账号不一致时立刻中止；身份没核对过的旧批次也不能靠续跑绕过
+- **报告不伪称身份**：续跑时 `sec_uid` 未复核就如实标注，不再写「匹配」
+- **界面不再卡主线程**：日期范围预检与设置页库现状统计移到后台线程，点动作按钮复用刚算过的结果
+- **键盘与日历**：长按空格 / 回车只触发一次；日历内 Tab 可到「清除 / 回到不限」，清除后立即刷新范围提示
+- **浅色主题对比度**：进度条填充与翻月箭头 hover 改用深薄荷，非文本对比度 ≥ 3:1
+- **安装与掩码**：路径含单引号也能建快捷方式；附属项失败会明确报出（覆盖升级时仍指向本版程序的旧快捷方式视为已就位）；昵称为空时账号框显示掩码
+- **文档与截图**：README / 工程说明改为海岛浅色口径，界面截图按本版重拍
+
+V0.1.5 的海岛浅色主题、按钮手感与两级分类全部保留。
 
 ## V0.1.5 本版变更
 
@@ -143,19 +157,19 @@ export-<范围>-<时间戳>/
 
 | 层级 | 技术选型 |
 |:---:|:---|
-| 语言与界面 | Python 3.12 + Tkinter 自绘（深色 + 抖音品牌色） |
+| 语言与界面 | Python 3.12 + Tkinter 自绘（海岛浅色 · 薄荷 / 沙色） |
 | 打包 | PyInstaller 单文件 exe |
 | 编排 | 子进程流式读日志 + 事件驱动进度 |
 | 协议 | 本地 MCP stdio（可选） |
 
 ## 下载安装
 
-当前版本 **V0.1.5**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
+当前版本 **V0.1.6**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
 
 | 安装包 | 说明 |
 |:---|:---|
-| `*-Setup-V0.1.5.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
-| `*-V0.1.5-portable.zip` | 解压后双击即用，不写注册表 |
+| `*-Setup-V0.1.6.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
+| `*-V0.1.6-portable.zip` | 解压后双击即用，不写注册表 |
 
 **前置条件**
 
@@ -215,10 +229,10 @@ export-<范围>-<时间戳>/
 
 ```bash
 python build/build.py          # 构建 dist/Setup + 便携 zip
-python tests/run_all.py 轮次名   # 14 步全量复检
+python tests/run_all.py 轮次名   # 15 步全量复检
 ```
 
-版本号唯一真源是 `src/common.py` 的 `VERSION`。发版前必须 14/14 PASS，且
+版本号唯一真源是 `src/common.py` 的 `VERSION`。发版前必须 15/15 PASS，且
 `tests/verify_public_safe.py` 通过（本机敏感词名单 `tests/public_safe.local.txt` 不进 Git，
 参考 `tests/public_safe.local.example.txt`）。
 
@@ -230,7 +244,7 @@ python tests/run_all.py 轮次名   # 14 步全量复检
 douyin-ai-knowledge-client/
 ├── src/       界面、编排、两级分类、交付、入库报告、MCP、安装器
 ├── build/     构建脚本、图标、隔离依赖
-├── tests/     14 步复检（离线夹具 + 真实数据只读回归）
+├── tests/     15 步复检（离线夹具 + 真实数据只读回归）
 ├── docs/      工程说明与界面截图
 └── dist/      构建产物（exe / zip 不进 Git，走 Releases）
 ```

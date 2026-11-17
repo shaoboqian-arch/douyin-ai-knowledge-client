@@ -147,6 +147,7 @@ def main():
         app.frm.delete(0, "end"); app.frm.insert(0, "2026-11-01")
         app.to.delete(0, "end"); app.to.insert(0, "2026-11-30")
         app._update_range_hint()
+        pump(root, 0.8)        # 范围预检现在跑在后台线程，等结果回主线程
         check("范围提示按数据实算", "范围内" in app.range_hint.cget("text"),
               app.range_hint.cget("text"))
 

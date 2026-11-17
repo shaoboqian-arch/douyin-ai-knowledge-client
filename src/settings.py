@@ -9,7 +9,7 @@ from tkinter import messagebox
 import config
 import detect
 import mcp_config as mcpcfg
-from common import APP_NAME, VERSION
+from common import APP_NAME, VERSION, DeferredCall
 from ui_kit import (
     ACCENT, BG, BORDER, CARD, CARD_LINE, CYAN, ERR, MUTED, PANEL, SURFACE, TEXT, WARN,
     CapsuleButton, CheckBox, RoundedEntry, Tooltip, apply_icon, apply_theme,
@@ -44,6 +44,8 @@ class Settings:
         self.busy = False
         self._scan_q = queue.Queue()
         self.mcp_open = False
+        # 库现状要 os.walk 全库并解析两份 JSON，别在 UI 线程里做（F-9）。
+        self._status_call = DeferredCall(root, engine_status, self._on_status)
 
         root.title(f"设置 · {APP_NAME} {VERSION}")
         root.resizable(True, True)
@@ -238,13 +240,22 @@ class Settings:
         ok = all(("缺失" not in b and "未启用" not in b) for b in bits)
         self.set_state(" · ".join(bits), CYAN if ok else WARN)
 
-        stats = (engine_status() or {}).get("kb_stats") or {}
-        if stats:
-            self.kb_stats.configure(
-                text=f"库现状：{stats.get('total', 0):,} 收藏 · {stats.get('ai', 0):,} AI 笔记 · "
-                     f"{stats.get('concepts', 0):,} 概念 · {stats.get('pairs', 0):,} 共现")
-        else:
-            self.kb_stats.configure(text="库现状：尚未生成（同步一次后出现）")
+        self._status_call.run()
+
+    def _on_status(self, result):
+        """库现状统计在后台算完，回主线程再写标签。"""
+        if not isinstance(result, dict):
+            return
+        stats = result.get("kb_stats") or {}
+        try:
+            if stats:
+                self.kb_stats.configure(
+                    text=f"库现状：{stats.get('total', 0):,} 收藏 · {stats.get('ai', 0):,} AI 笔记 · "
+                         f"{stats.get('concepts', 0):,} 概念 · {stats.get('pairs', 0):,} 共现")
+            else:
+                self.kb_stats.configure(text="库现状：尚未生成（同步一次后出现）")
+        except tk.TclError:
+            pass
 
     def show_account(self):
         nick = self.cfg.get("expect_nickname") or "未设置"
@@ -286,6 +297,10 @@ class Settings:
         threading.Thread(target=work, daemon=True).start()
 
     def _cancel_poll(self, _e=None):
+        # 子控件销毁也会经 bindtags 冒到 toplevel，别因此提前停掉后台调用。
+        if _e is not None and getattr(_e, "widget", None) is not self.root:
+            return
+        self._status_call.destroy()
         try:
             if getattr(self, "_poll_job", None):
                 self.root.after_cancel(self._poll_job)

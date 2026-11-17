@@ -104,8 +104,15 @@ def build(project, kb_dir, cfg, collect, ids, rows, prev_rows, concepts_map,
     min_count = int(cfg.get("min_count") or 0)
     matched = bool(acct.get("matched"))
     if mode == "retry":
-        identity = f"{acct.get('nickname') or '（沿用本轮采集）'}（sec_uid 匹配），采集 {total} 条（续跑，不重新采集）"
-        identity_state = OK
+        who = acct.get("nickname") or "（沿用本轮采集）"
+        tail = f"，采集 {total} 条（续跑，不重新采集）"
+        # 续跑不重新采集，但也不能把「未核对过」写成「已匹配」（V0.1.6 / F-2）。
+        if matched:
+            identity = f"{who}（sec_uid 匹配）{tail}"
+            identity_state = OK
+        else:
+            identity = f"{who}（sec_uid 未复核）{tail}"
+            identity_state = WARN
     elif matched:
         identity = f"{acct.get('nickname') or '（未取到昵称）'}（sec_uid 匹配），采集 {total} 条"
         if min_count:

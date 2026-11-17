@@ -32,6 +32,9 @@ MUTED = "#6f6455"
 MINT = "#19c8b9"
 MINT_HI = "#50b9ab"
 MINT_BG = "#e6f9f6"
+# 非文本元素（进度条填充、日历箭头 hover）要用深薄荷：MINT 对 TRACK 只有 1.63:1，
+# 低于 WCAG 非文本 3:1；MINT_DEEP 对 TRACK 4.68:1、对 SAND 4.95:1，仍是同一支色。
+MINT_DEEP = "#0b6f66"
 # 薄荷主按钮上的字：米白 #f8f8f0 只有 1.97:1（悬停 2.22:1），改用深棕 6.45:1（悬停 5.72:1）。
 ON_MINT = "#3f2a12"
 SAND = "#f0e8d8"
@@ -300,6 +303,7 @@ else:
             self._state = "normal"
             self._hover = False
             self._focus = False
+            self._key_held = False       # 键盘自动重复去重（F-4）
             self._font = font or (FONT_FAMILY, 10, "bold" if primary else "normal")
             self._box_w, self._box_h = width, height
             self._lift = 0.0
@@ -319,6 +323,8 @@ else:
             self.bind("<FocusOut>", self._on_focus_out)
             self.bind("<space>", self._on_key)
             self.bind("<Return>", self._on_key)
+            self.bind("<KeyRelease-space>", self._on_key_release)
+            self.bind("<KeyRelease-Return>", self._on_key_release)
             self.bind("<Configure>", lambda _e: self._draw())
             self.bind("<Destroy>", self._cancel_anim, add="+")
             self._draw()
@@ -470,11 +476,17 @@ else:
 
         def _on_focus_out(self, _e=None):
             self._focus = False
+            self._key_held = False       # 焦点中途移走，别把按钮锁在「已按下」
             self._draw()
 
         def _on_key(self, _e=None):
             if self._state == "disabled":
                 return "break"
+            # 长按空格/回车时系统会连发 KeyPress；只认第一次，松开才重置，
+            # 避免 busy 时在「全仓同步 → 停止确认」之间反复触发（F-4）。
+            if self._key_held:
+                return "break"
+            self._key_held = True
             self._press_to = 1.0
             self._lift_to = 0.0
             self._retarget(self._PRESS_MS)
@@ -490,6 +502,10 @@ else:
                 pass
             if self._command:
                 self._command()
+            return "break"
+
+        def _on_key_release(self, _e=None):
+            self._key_held = False
             return "break"
 
         def _on_press(self, _e=None):
@@ -958,12 +974,13 @@ else:
                 span = max(24, int(w * 0.28))
                 travel = max(1, w - span)
                 x = int((self._pulse / 120.0) * travel)
-                _round_rect(self, x, y1, x + span, y2, (y2 - y1) / 2, fill=MINT, outline="")
+                _round_rect(self, x, y1, x + span, y2, (y2 - y1) / 2,
+                            fill=MINT_DEEP, outline="")
             else:
                 ratio = min(1.0, self._value / float(self._maximum or 1))
                 if ratio > 0:
                     _round_rect(self, 0, y1, max(8, int(w * ratio)), y2,
-                                (y2 - y1) / 2, fill=MINT, outline="")
+                                (y2 - y1) / 2, fill=MINT_DEEP, outline="")
 
 
     class DatePicker:
@@ -1043,9 +1060,46 @@ else:
             self._build_chrome()
             self.win.update_idletasks()
             self._show_month(self._year, self._month, animate=False)
-            self.win.bind("<FocusOut>", lambda _e: self.close())
+            # 焦点在弹层内部移动（Tab 到「清除」）不能关窗；外部失焦才关（F-6）。
+            self.win.bind("<FocusOut>", self._on_focus_out)
+            self.win.bind("<Tab>", self._on_tab)
             self.win.bind("<Escape>", self._on_escape)
             self.win.focus_set()
+
+        def _on_focus_out(self, event=None):
+            detail = str(getattr(event, "detail", "") or "")
+            if "Inferior" in detail:               # 焦点在同一弹层内部转移
+                return
+            try:
+                self.win.after_idle(self._maybe_close)
+            except (tk.TclError, AttributeError):
+                pass
+
+        def _maybe_close(self):
+            if self.win is None:
+                return
+            try:
+                f = self.win.focus_get()
+            except (tk.TclError, KeyError, AttributeError):
+                f = None
+            if f is not None:
+                w = f
+                while w is not None:
+                    if w is self.win:
+                        return                     # 新焦点仍在弹层里
+                    parent = getattr(w, "master", None)
+                    w = None if parent is w else parent
+            self.close()
+
+        def _on_tab(self, _e=None):
+            """弹层里唯一可聚焦的动作是「清除」，Tab 直接送过去。"""
+            if self.win is None:
+                return "break"
+            try:
+                self._clear_btn.focus_set()
+            except (tk.TclError, AttributeError):
+                pass
+            return "break"
 
         def _on_escape(self, _e=None):
             self.close()
@@ -1083,8 +1137,10 @@ else:
             self._stage.pack_propagate(False)
             foot = tk.Frame(self._body, bg=BG)
             foot.pack(fill="x", pady=(8, 0))
-            CapsuleButton(foot, text="清除 / 回到不限", command=self._clear,
-                          width=168, height=28, font=self.font, bg=BG).pack()
+            self._clear_btn = CapsuleButton(
+                foot, text="清除 / 回到不限", command=self._clear,
+                width=168, height=28, font=self.font, bg=BG)
+            self._clear_btn.pack()
 
         def _make_grid(self, year, month):
             grid = tk.Frame(self._stage, bg=BG, width=self._stage_w, height=self._stage_h)
@@ -1210,7 +1266,7 @@ else:
             lb = tk.Label(parent, text=text, bg=BG, fg=TEXT, font=(self.font[0], 12),
                           width=2, cursor="hand2", takefocus=0)
             lb.bind("<Button-1>", lambda _e: self._shift(delta))
-            lb.bind("<Enter>", lambda _e: lb.configure(bg=SAND, fg=MINT))
+            lb.bind("<Enter>", lambda _e: lb.configure(bg=SAND, fg=MINT_DEEP))
             lb.bind("<Leave>", lambda _e: lb.configure(bg=BG, fg=TEXT))
             return lb
 
@@ -1233,11 +1289,7 @@ else:
             except tk.TclError:
                 pass
             self.close()
-            if self.on_pick:
-                try:
-                    self.on_pick()
-                except Exception:
-                    pass
+            self._notify_pick()
 
         def _clear(self):
             try:
@@ -1245,3 +1297,12 @@ else:
             except tk.TclError:
                 pass
             self.close()
+            # 程序化 delete 不会触发 KeyRelease；范围提示必须靠这里刷新（F-7）。
+            self._notify_pick()
+
+        def _notify_pick(self):
+            if self.on_pick:
+                try:
+                    self.on_pick()
+                except Exception:
+                    pass

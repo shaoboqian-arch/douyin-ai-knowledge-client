@@ -39,6 +39,7 @@ def steps():
         ("公开面", [PY, os.path.join(HERE, "verify_public_safe.py")]),
         ("真实数据", [PY, os.path.join(HERE, "verify_real.py")]),
         ("审计一致性", [PY, os.path.join(HERE, "verify_audit.py")]),
+        ("F 清单闭环", [PY, os.path.join(HERE, "verify_f016.py")]),
     ]
 
 

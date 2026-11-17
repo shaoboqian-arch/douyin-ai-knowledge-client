@@ -5,11 +5,17 @@
 并且日志要落盘 —— 界面关掉之后还能看到这一轮到底跑到哪一页。
 """
 import os
+import re
 import subprocess
 import threading
 import time
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+# 上游脚本若把账号行改成 sec_uid= / secUid / JSON 形式，也尽量认出来；
+# 认不出来的话 sec_uid 保持空串，由 engine.sync 的硬门 fail-closed 兜住。
+_SEC_RE = re.compile(
+    r"sec[_-]?uid['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9_\-]{6,})", re.I)
 
 
 class Cancelled(Exception):
@@ -103,19 +109,35 @@ def run_script(python, script_path, args, cwd, log_path, on_line=None,
 
 
 def scan_stdout(lines):
-    """从采集日志里认账号与总数（extract_favorites.py 的两条固定输出）。"""
+    """从采集日志里认账号与总数。
+
+    账号标识认几种写法（sec_uid: / sec_uid= / secUid / JSON 片段），
+    昵称取标识之前的文字；解析不到标识时返回空串，调用方必须中止，
+    不能因为「没解析到」就当作账号一致。
+    """
     account = {"nickname": "", "sec_uid": ""}
     total = None
     pages = 0
     for line in lines:
         s = line.strip()
-        if s.startswith("[self-profile] 账号:"):
-            body = s.split("账号:", 1)[1]
-            if "sec_uid:" in body:
-                name, sec = body.split("sec_uid:", 1)
-                account["nickname"] = name.strip()
-                account["sec_uid"] = sec.strip()
-        elif s.startswith("[collect] 共获取"):
+        m = _SEC_RE.search(s)
+        if m:
+            account["sec_uid"] = m.group(1).strip().strip("'\"")
+            head = s[:m.start()]
+            if "账号:" in head:
+                head = head.split("账号:", 1)[1]
+            head = re.sub(r"^\[self-profile\]\s*", "", head.strip())
+            nick = re.search(r'"nickname"\s*:\s*"([^"]+)"', head)
+            if nick:
+                account["nickname"] = nick.group(1)
+            else:
+                account["nickname"] = head.strip(" :：,，\"'[]{}-")
+        elif s.startswith("[self-profile] 账号:"):
+            body = s.split("账号:", 1)[1].strip()
+            # 标识写了但值为空：昵称仍要认出来，sec_uid 保持空串由硬门拦住。
+            body = re.split(r"sec[_-]?uid\s*[:=]", body, flags=re.I)[0]
+            account["nickname"] = body.strip(" :：,，\"'")
+        if s.startswith("[collect] 共获取"):
             m = s.replace("条收藏", "").split()[-1]
             if m.isdigit():
                 total = int(m)

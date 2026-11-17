@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """公共常量与路径解析（源码运行 / PyInstaller 冻结两种形态都可用）。"""
 import os
+import queue
 import sys
+import threading
 
-VERSION = "0.1.5"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
+VERSION = "0.1.6"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
 APP_NAME = "抖音收藏整理"
 MCP_SERVER_NAME = "douyin-fav-sync"
 EXE_NAME = "抖音收藏整理.exe"
@@ -151,3 +153,76 @@ def pointer_inside(x, y, width, height):
     except (TypeError, ValueError):
         return False
     return 0 <= x <= width and 0 <= y <= height
+
+
+class DeferredCall:
+    """把同步函数放到后台线程，只把最后一次结果交回 Tk 主线程。
+
+    日期预检与库现状统计都要读全量 rows／转写稿／笔记目录，放在 UI 线程会卡住窗口。
+    结果用队列 + after 轮询取回（子线程绝不碰 Tk）；窗口销毁后停止回调。
+    """
+
+    def __init__(self, root, fn, on_done, poll_ms=30, with_args=False):
+        self.root = root
+        self.fn = fn
+        self.on_done = on_done
+        self.poll_ms = poll_ms
+        self.with_args = with_args
+        self._q = queue.Queue()
+        self._seq = 0
+        self._job = None
+        self._alive = True
+
+    def run(self, *args, **kwargs):
+        if not self._alive:
+            return
+        self._seq += 1
+        seq = self._seq
+        threading.Thread(target=self._work, args=(seq, args, kwargs),
+                         daemon=True).start()
+        self._ensure_poll()
+
+    def _work(self, seq, args, kwargs):
+        try:
+            result = self.fn(*args, **kwargs)
+        except Exception as e:                       # 不让后台异常静默吞掉
+            result = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        self._q.put((seq, result, args))
+
+    def _ensure_poll(self):
+        if self._job is None and self._alive:
+            try:
+                self._job = self.root.after(self.poll_ms, self._poll)
+            except Exception:
+                self._job = None
+
+    def _poll(self):
+        self._job = None
+        latest = None
+        meta = ()
+        while True:
+            try:
+                seq, result, args = self._q.get_nowait()
+            except queue.Empty:
+                break
+            if seq == self._seq:                    # 过期结果直接丢弃
+                latest, meta = result, args
+        if latest is not None and self._alive:
+            try:
+                if self.with_args:
+                    self.on_done(latest, meta)
+                else:
+                    self.on_done(latest)
+            except Exception:
+                pass
+        elif self._alive:
+            self._ensure_poll()
+
+    def destroy(self):
+        self._alive = False
+        if self._job:
+            try:
+                self.root.after_cancel(self._job)
+            except Exception:
+                pass
+            self._job = None

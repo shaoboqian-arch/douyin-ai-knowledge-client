@@ -195,7 +195,7 @@ def scan_public_copy(version):
         "dist/README.md": (f"# 抖音收藏整理 V{version}", "dy_report"),
         "build/README.template.md": ("V{VERSION}", "dy_report"),
         "build/build.py": ("dy_report", "《导出报告.md》"),
-        "docs/工程说明.md": (f"# 抖音收藏整理 · V{version}", "14/14 PASS"),
+        "docs/工程说明.md": (f"# 抖音收藏整理 · V{version}", "15/15 PASS"),
     }
     for rel, needles in checks.items():
         text = read_text(rel) or ""

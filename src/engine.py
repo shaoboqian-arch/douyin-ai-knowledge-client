@@ -360,11 +360,31 @@ def sync(dest, frm="", to="", on_event=None, on_progress=None, cancel=None,
 
     acct = info.get("account") or {}
     expect = (cfg.get("expect_sec_uid") or "").strip()
-    if expect and acct.get("sec_uid") and acct["sec_uid"] != expect:
+    got = (acct.get("sec_uid") or "").strip()
+    # 账号硬门 fail-closed：确认账号缺失、标识解析不到、标识不一致，
+    # 三种情况一律中止，绝不在「没解析到」时静默放行（V0.1.6 / F-1）。
+    if not expect:
+        return fail("collect",
+                    "账号未确认：请先在「初始化本机环境」里校验并采用账号；"
+                    "已中止，未重建交付物。",
+                    {"collect": {"account": acct, "total": info.get("total"),
+                                 "gates_ok": False,
+                                 "identity_reason": "account_not_confirmed"}})
+    if not got:
+        return fail("collect",
+                    "账号无法核对：本轮采集日志没有给出可比的 sec_uid"
+                    "（上游输出格式可能已变化，或 Cookie 已换号）；"
+                    "已中止，未重建交付物。请确认采集脚本与登录态。",
+                    {"collect": {"account": acct, "total": info.get("total"),
+                                 "gates_ok": False,
+                                 "identity_reason": "sec_uid_missing"}})
+    if got != expect:
         return fail("collect",
                     f"账号不符：本轮采集到的是「{acct.get('nickname') or '未知'}」，"
                     f"与设置的账号不一致；已中止，未重建交付物。",
-                    {"collect": {"account": acct, "total": info.get("total")}})
+                    {"collect": {"account": acct, "total": info.get("total"),
+                                 "gates_ok": False,
+                                 "identity_reason": "mismatch"}})
     total = info.get("total")
     if total is None:
         try:
@@ -565,6 +585,12 @@ def retry(batch_path, on_event=None, on_progress=None, cancel=None):
         return {"ok": False, "error": "这一批已经完成，无需续跑"}
     if not (state.get("collect") or {}).get("gates_ok"):
         return {"ok": False, "error": "这一批在采集阶段就中止了，需要重新点「⚠️ 全仓同步」"}
+    # 旧版本（V0.1.5 及以前）可能在账号标识解析不到时仍把 gates_ok 置 True；
+    # 这种批次的身份没有真正核对过，不允许靠续跑把数据重建进知识库（F-1）。
+    old_acct = (state.get("collect") or {}).get("account") or {}
+    if old_acct and old_acct.get("matched") is not True:
+        return {"ok": False,
+                "error": "这一批的账号身份未通过核对，不能续跑；请重新点「⚠️ 全仓同步」"}
     cfg = config.load()
     st = status(state.get("project_dir") or None, cfg)
     if not st["python_ok"]:

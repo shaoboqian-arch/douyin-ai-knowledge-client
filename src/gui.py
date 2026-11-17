@@ -5,6 +5,7 @@ import json
 import os
 import queue
 import threading
+import time
 import traceback
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -14,8 +15,8 @@ import engine
 import settings as settings_ui
 import setup_env
 from common import (
-    APP_NAME, PHASES, VERSION, app_dir, format_gap_rows, gap_heading,
-    is_frozen, prefs_path,
+    APP_NAME, PHASES, VERSION, DeferredCall, app_dir, format_gap_rows,
+    gap_heading, is_frozen, prefs_path,
 )
 from ui_kit import (
     ACCENT, BG, BORDER, CARD, CARD_LINE, CYAN, DONE_BG, ERR, ERR_BG, MUTED,
@@ -90,6 +91,11 @@ class App:
         self.rows_mtime = ""
         self._env_seq = 0
         self.last_batch = ""
+        # 日期范围提示的预检要读全量 rows + 转写稿，放后台线程，别卡住窗口（F-3）。
+        # with_args 让回调知道这份结果对应哪段日期，供点击动作复用。
+        self._range_call = DeferredCall(root, engine.preflight, self._on_preflight,
+                                        with_args=True)
+        self._last_preflight = None
         self.last_state = {}
         self.report = {}
         self.stats = _blank_stats()
@@ -228,6 +234,9 @@ class App:
         root.bind("<Escape>", lambda _e: self.close())
         root.bind("<Configure>", self._on_configure)
         root.protocol("WM_DELETE_WINDOW", self.close)
+        root.bind("<Destroy>",
+                  lambda e: self._range_call.destroy()
+                  if getattr(e, "widget", None) is root else None, add="+")
         self._after_id = root.after(60, self.poll)
         self.refresh_env()
         self.root.after(120, lambda: self._restore_last(prefs))
@@ -584,6 +593,7 @@ class App:
         report_ui.open(self.root, self.report, config.load().get("kb_dir", ""))
 
     def close(self):
+        self._range_call.destroy()
         if self.busy:
             if not messagebox.askyesno(APP_NAME, "整理还在进行，关闭会中止本轮且不生成交付。确定停止并退出？",
                                        parent=self.root):
@@ -622,19 +632,36 @@ class App:
         if not ok:
             self.range_hint.configure(text="日期格式 YYYY-MM-DD；留空表示全部", fg=WARN)
             return
-        pre = engine.safe_call(engine.preflight, frm, to)
+        # 只发请求，不在这里等结果；过期结果由 DeferredCall 丢弃。
+        self._range_call.run(frm, to)
+
+    def _on_preflight(self, pre, args=()):
+        """后台预检结果的唯一落地点：仍在主线程更新文字。"""
+        if not isinstance(pre, dict):
+            return
+        if pre.get("ok"):
+            self._last_preflight = {"key": tuple(args[:2]), "at": time.time(),
+                                    "data": pre}
         if not pre.get("ok"):
             self.range_hint.configure(
                 text="留空表示全部；只影响导出的笔记，不影响采集", fg=MUTED)
             return
         n = int(pre.get("in_range") or 0)
         if n:
+            by_type = pre.get("by_type") or {}
             self.range_hint.configure(
-                text=f"范围内 {n:,} 条（视频 {pre['by_type'].get('视频', 0):,} · "
-                     f"图集 {pre['by_type'].get('图集', 0):,}）；采集仍为全量", fg=CYAN)
+                text=f"范围内 {n:,} 条（视频 {by_type.get('视频', 0):,} · "
+                     f"图集 {by_type.get('图集', 0):,}）；采集仍为全量", fg=CYAN)
         else:
             self.range_hint.configure(
                 text="范围内 0 条：换一个日期，或留空导出全部", fg=WARN)
+
+    def _preflight_cached(self, frm, to):
+        """点动作按钮时复用刚算过的范围预检，避免再全量解析一次（F-3）。"""
+        c = getattr(self, "_last_preflight", None)
+        if c and c.get("key") == (frm, to) and time.time() - c.get("at", 0) < 30:
+            return c["data"]
+        return engine.safe_call(engine.preflight, frm, to)
 
     def _confirm_empty_range(self, n):
         return messagebox.askyesno(
@@ -660,7 +687,7 @@ class App:
         if not ok:
             self.set_state(err, ERR)
             return
-        pre = engine.safe_call(engine.preflight, frm, to)
+        pre = self._preflight_cached(frm, to)
         if pre.get("ok") and int(pre.get("in_range") or 0) == 0:
             if not self._confirm_empty_range(0):
                 return
@@ -668,6 +695,7 @@ class App:
         self.busy = True
         self.cancel.clear()
         self.last_batch = ""
+        self._last_preflight = None
         self.last_state = {}
         self.report = {}
         self.stats = _blank_stats()
@@ -708,7 +736,7 @@ class App:
         if not ok:
             self.set_state(err, ERR)
             return
-        pre = engine.safe_call(engine.preflight, frm, to)
+        pre = self._preflight_cached(frm, to)
         if pre.get("ok") and int(pre.get("in_range") or 0) == 0:
             messagebox.showinfo(
                 "范围内没有条目",
@@ -719,6 +747,7 @@ class App:
         self.busy = True
         self.cancel.clear()
         self.last_batch = ""
+        self._last_preflight = None
         self.last_state = {}
         self.report = {}
         self.stats = _blank_stats()

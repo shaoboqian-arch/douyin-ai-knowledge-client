@@ -240,7 +240,7 @@ class Setup:
         acct = info.get("account") or {}
         if r["code"] == 0 and acct.get("sec_uid"):
             self.probed = acct
-            self.account.set(acct.get("nickname") or acct["sec_uid"])
+            self.account.set(acct.get("nickname") or detect.mask_sec_uid(acct["sec_uid"]))
             self.set_state(f"校验通过：{acct.get('nickname')} · {acct['sec_uid'][:10]}…"
                            "（点「采用」写入设置）", CYAN)
             return
@@ -253,7 +253,8 @@ class Setup:
             return
         self.cfg["expect_sec_uid"] = self.probed["sec_uid"]
         self.cfg["expect_nickname"] = self.probed.get("nickname", "")
-        self.account.set(self.probed.get("nickname") or self.probed["sec_uid"])
+        self.account.set(self.probed.get("nickname") or
+                         detect.mask_sec_uid(self.probed["sec_uid"]))
         self.set_state("已记录这个账号；以后采集到别的账号会自动中止，不重建交付物。", CYAN)
         self.refresh()
 

@@ -53,12 +53,40 @@ def start_menu_dir():
                         "Microsoft", "Windows", "Start Menu", "Programs")
 
 
+def _ps_quote(s):
+    """PowerShell 单引号字符串：内部单引号写成两个（路径里可能有 O'Brien）。"""
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _read_lnk_target(lnk):
+    """读快捷方式指向的程序。用 base64 传回，避开 PowerShell 输出编码。"""
+    s = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut("
+         + _ps_quote(lnk) + ")\n"
+         "[Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($s.TargetPath))\n")
+    rc, out = _ps(s)
+    if rc != 0 or not out:
+        return ""
+    try:
+        return base64.b64decode(out.strip()).decode("utf-8")
+    except (ValueError, UnicodeError):
+        return ""
+
+
+def shortcut_ready(lnk, exe):
+    """目标已存在且指向同一 exe：覆盖升级时无需重写（系统可能保护旧 .lnk）。"""
+    if not os.path.isfile(lnk):
+        return False
+    target = _read_lnk_target(lnk)
+    return bool(target) and \
+        os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(exe))
+
+
 def make_shortcut(lnk, target, workdir):
     s = ("$shell = New-Object -ComObject WScript.Shell\n"
-         f"$lnk = $shell.CreateShortcut('{lnk}')\n"
-         f"$lnk.TargetPath = '{target}'\n"
-         f"$lnk.WorkingDirectory = '{workdir}'\n"
-         f"$lnk.Description = '{APP_NAME}'\n"
+         f"$lnk = $shell.CreateShortcut({_ps_quote(lnk)})\n"
+         f"$lnk.TargetPath = {_ps_quote(target)}\n"
+         f"$lnk.WorkingDirectory = {_ps_quote(workdir)}\n"
+         f"$lnk.Description = {_ps_quote(APP_NAME)}\n"
          "$lnk.Save()\n")
     return _ps(s)[0] == 0
 
@@ -121,19 +149,31 @@ def install(dest, no_shortcut=False, progress=None):
             "MCP：把 mcp配置.json 里 douyin-fav-sync 这一个键合并进 `~/.workbuddy/mcp.json` 已有的 "
             "mcpServers（不要整份覆盖），保存后到连接器管理页点「信任」；接入后调用 dy_status 验证。\n")
 
+    failed = []
     if not no_shortcut:
         say("正在创建快捷方式…")
-        try:
-            d = desktop_dir()
-            os.makedirs(d, exist_ok=True)
-            make_shortcut(os.path.join(d, f"{APP_NAME}.lnk"), exe, dest)
-            d2 = start_menu_dir()
-            os.makedirs(d2, exist_ok=True)
-            make_shortcut(os.path.join(d2, f"{APP_NAME}.lnk"), exe, dest)
-        except OSError:
-            pass
-        write_uninstall_item(exe)
-
+        for label, d in (("桌面快捷方式", desktop_dir),
+                         ("开始菜单快捷方式", start_menu_dir)):
+            try:
+                folder = d()
+                os.makedirs(folder, exist_ok=True)
+                lnk_path = os.path.join(folder, f"{APP_NAME}.lnk")
+                if make_shortcut(lnk_path, exe, dest):
+                    continue
+                # 覆盖升级时旧 .lnk 可能被系统保护到不可写；只要它仍指向本版
+                # exe，点它就会启动新版本，不算失败，也不必冒险删用户桌面的文件。
+                if shortcut_ready(lnk_path, exe):
+                    continue
+                failed.append(label)
+            except OSError as e:
+                failed.append(f"{label}（{e}）")
+        if not write_uninstall_item(exe):
+            failed.append("卸载登记")
+    if failed:
+        # 程序本体已装好，但附属项失败不能静默报「已安装」（F-8）。
+        msg = "已安装；未完成：" + "、".join(failed)
+        say(msg)
+        return True, msg, dest
     say("已安装")
     return True, "已安装", dest
 
