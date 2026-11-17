@@ -152,16 +152,27 @@ def status(project_dir=None, cfg=None):
     expect = (cfg.get("expect_sec_uid") or "").strip()
     missing = []
     if not project_ok:
+        # 首启只报第一个缺口，别把依赖它的解释器/Cookie 一起报出来
         missing.append("项目目录")
-    if not python_ok:
-        missing.append("项目解释器")
-    if not cookie_ok:
-        missing.append("抖音登录 Cookie")
-    if not expect:
-        missing.append("账号确认")
-    if kb_enabled and not kb_ok:
-        missing.append("知识库目录")
+    else:
+        if not python_ok:
+            missing.append("项目解释器")
+        if not cookie_ok:
+            missing.append("抖音登录 Cookie")
+        if not expect:
+            missing.append("账号确认")
+        if kb_enabled and not kb_ok:
+            missing.append("知识库目录")
     ready = not missing
+    rows_path = os.path.join(project, "work", "rows_merged.json") if project_ok else ""
+    rows_ok = bool(rows_path) and os.path.isfile(rows_path)
+    rows_mtime = ""
+    if rows_ok:
+        try:
+            rows_mtime = dt.datetime.fromtimestamp(
+                os.path.getmtime(rows_path)).strftime("%Y-%m-%d %H:%M")
+        except OSError:
+            rows_mtime = ""
     kb_stats = {}
     if kb_ok and project_ok:
         try:
@@ -193,6 +204,7 @@ def status(project_dir=None, cfg=None):
                      "vaults": obsidian.get("vaults") or [],
                      "message": obsidian.get("message", "")},
         "min_count": int(cfg.get("min_count") or 0),
+        "rows_ok": rows_ok, "rows_mtime": rows_mtime,
         "missing": missing, "warnings": warnings,
     }
 
@@ -500,8 +512,11 @@ def export_only(dest, frm="", to="", on_event=None, on_progress=None, project_di
         return {"ok": False, "error": "未选择交付目录"}
     try:
         rows = load_rows(st["project_dir"])
+    except FileNotFoundError:
+        return {"ok": False,
+                "error": "还没有整理结果：请先点右上角「全仓同步」跑一次，再用「仅导出」"}
     except (OSError, ValueError) as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": f"读取整理结果失败：{e}"}
     os.makedirs(dest, exist_ok=True)
     batch = _unique_batch(dest, batch_label(frm, to))
     _emit(on_event, {"type": "phase", "name": "export"})
@@ -539,7 +554,7 @@ def retry(batch_path, on_event=None, on_progress=None, cancel=None):
     """对已采集成功的批次，重跑重建 + 导出，写成**新的一批**（不重新采集）。
 
     · 不原地改写旧批次：旧批次保留为证据，新批次名带 `-r2`、`-r3`，绝不覆盖。
-    · 采集阶段就中止的批次不能靠续跑补救 —— 那需要重新采集，直接点「开始整理」。
+    · 采集阶段就中止的批次不能靠续跑补救 —— 那需要重新采集，直接点「⚠️ 全仓同步」。
     """
     old = (batch_path or "").strip()
     state = read_state(old)
@@ -549,7 +564,7 @@ def retry(batch_path, on_event=None, on_progress=None, cancel=None):
     if stage == "done":
         return {"ok": False, "error": "这一批已经完成，无需续跑"}
     if not (state.get("collect") or {}).get("gates_ok"):
-        return {"ok": False, "error": "这一批在采集阶段就中止了，需要重新点「开始整理」"}
+        return {"ok": False, "error": "这一批在采集阶段就中止了，需要重新点「⚠️ 全仓同步」"}
     cfg = config.load()
     st = status(state.get("project_dir") or None, cfg)
     if not st["python_ok"]:

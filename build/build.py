@@ -144,17 +144,23 @@ def write_texts():
 
 def pack_portable(exe):
     note = (f"# {APP_NAME} V{VERSION} · 便携版\n\n"
-            "双击 `抖音收藏整理.exe` 打开界面；首次运行点「初始化本机环境」。\n\n"
+            "双击 `抖音收藏整理.exe` 打开界面；首次运行点「初始化本机环境」。\n"
+            "完成后先点右上角「⚠️ 全仓同步」跑一次全量采集（约 25 分钟），"
+            "之后才能用「仅导出」出批次。\n\n"
+            "每轮新建带时间戳的批次目录，绝不覆盖已有文件；计数、子类别分布、待加工、"
+            "明细与入库结果都在批次里的《导出报告.md》。\n\n"
             "MCP 接入：把下面这一个键合并进 `~/.workbuddy/mcp.json` 已有的 mcpServers，\n"
             "把 command 换成本机 exe 的实际绝对路径（不要整份覆盖文件）。\n\n"
             "```json\n"
             '{"douyin-fav-sync": {"type": "stdio", "command": "<本机绝对路径>/抖音收藏整理.exe", '
             '"args": ["--mcp"], "description": "抖音收藏采集与知识库整理"}}\n'
             "```\n\n"
-            "保存后到 WorkBuddy 连接器管理 → 右上角自定义连接器 → 对本服务点「信任」才会生效；\n"
+            "工具：dy_status / dy_preflight / dy_export / dy_sync / dy_retry / dy_report。\n"
+            "保存后到连接器管理 → 自定义连接器 → 对本服务点「信任」才会生效；\n"
             "验证：新建对话调用 dy_status，返回 ready 即接通。\n\n"
-            "前置：本机已有可运行的抖音采集项目（TikTokDownloader，含 .venv 与已登录 Cookie），\n"
-            "以及一个已生成的 Obsidian 知识库目录。客户端不复制 Cookie、不上传任何数据。\n")
+            "前置：本机已有可运行的抖音采集项目（含 .venv 与已登录 Cookie），"
+            "以及一个已生成的 Obsidian 知识库目录（没装可关掉重建）。\n"
+            "客户端不复制 Cookie、不上传任何数据。\n")
     with zipfile.ZipFile(os.path.join(DIST, PORTABLE_ZIP), "w", zipfile.ZIP_DEFLATED) as z:
         z.write(exe, f"{APP_NAME}/{APP_NAME}.exe")
         z.writestr(f"{APP_NAME}/说明.md", note)

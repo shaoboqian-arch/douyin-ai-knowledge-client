@@ -145,6 +145,15 @@ def main():
                 id_bad.append(r["输出路径"])
         check("frontmatter 字段齐全", not bad, str(bad[:3]))
         check("作品ID 与明细一致", not id_bad, str(id_bad[:2]))
+        hint_bad = []
+        for r in items:
+            if not r.get("子类别"):
+                continue
+            t = open(os.path.join(target, r["输出路径"]), encoding="utf-8").read()
+            fm = t.split("---")[1] if t.startswith("---") else ""
+            if "子类别依据:" not in fm:
+                hint_bad.append(r["输出路径"])
+        check("有子类别的笔记带规则依据", not hint_bad, str(hint_bad[:3]))
 
         print("== 目录规则 ==")
         cat_bad = []

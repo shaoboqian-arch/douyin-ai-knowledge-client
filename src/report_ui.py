@@ -11,7 +11,7 @@ import detect
 import kbreport
 from common import APP_NAME
 from ui_kit import (
-    BG, BORDER, CYAN, ERR, MUTED, PANEL, TEXT, WARN,
+    BG, BORDER, CYAN, ERR, FONT_FAMILY, MUTED, PANEL, TEXT, WARN,
     CapsuleButton, apply_icon, apply_theme, center, fonts,
 )
 
@@ -24,8 +24,8 @@ class ReportWindow:
         self.root = root
         self.report = report or {}
         self.kb_dir = kb_dir
-        self.font_main = font_main or ("Microsoft YaHei UI", 10)
-        self.font_small = font_small or ("Microsoft YaHei UI", 9)
+        self.font_main = font_main or (FONT_FAMILY, 10)
+        self.font_small = font_small or (FONT_FAMILY, 9)
         self._result_labels = []
 
         root.title(f"入库报告 · {APP_NAME}")

@@ -28,6 +28,7 @@ def steps():
         ("矩阵", [PY, os.path.join(HERE, "verify_matrix.py")]),
         ("子类别", [PY, os.path.join(HERE, "verify_subcat.py")]),
         ("知识库与报告", [PY, os.path.join(HERE, "verify_kb.py")]),
+        ("新用户路径", [PY, os.path.join(HERE, "verify_new_user.py")]),
         ("清单复核", [PY, os.path.join(HERE, "verify_manifest.py")]),
         ("界面", [PY, os.path.join(HERE, "verify_ui.py"), ROUND]),
         ("界面改动", [PY, os.path.join(HERE, "verify_ui_fix.py")]),
@@ -37,6 +38,7 @@ def steps():
         ("命令行", [PY, os.path.join(HERE, "verify_cli.py")] + exe),
         ("公开面", [PY, os.path.join(HERE, "verify_public_safe.py")]),
         ("真实数据", [PY, os.path.join(HERE, "verify_real.py")]),
+        ("审计一致性", [PY, os.path.join(HERE, "verify_audit.py")]),
     ]
 
 

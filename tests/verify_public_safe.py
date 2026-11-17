@@ -14,6 +14,8 @@
   7. 提交作者邮箱           全部可达提交必须是 noreply
   8. 标签指向               tag 必须落在当前历史内
   9. 名单文件未被跟踪       public_safe.local.txt 不得出现在 git ls-files
+ 10. 安装包内容隐私         Setup exe / 便携 zip 不得夹带本机敏感词或本机数据文件
+ 11. 对外文案一致           面向用户的材料版本、动作名、工具数、交付文件名一致
 
 按 git ls-files 扫描已跟踪文本（含已跟踪的 dist/build 说明），不整目录跳过 dist/ 与 build/。
 图片等二进制仍跳过，发版前需再人工查看截图与 Release 说明。
@@ -24,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOCAL_LIST = os.path.join("tests", "public_safe.local.txt")
@@ -117,6 +120,91 @@ def scan_patterns(local_secrets):
     return hard, mail, path, phone
 
 
+def current_version():
+    m = re.search(r'^VERSION\s*=\s*"([^"]+)"', read_text("src/common.py") or "", re.M)
+    return m.group(1) if m else ""
+
+
+def scan_artifacts(local_secrets, version):
+    """安装包隐私：exe 明文、便携版内文本、便携版文件清单、PyInstaller datas。"""
+    problems, checked = [], 0
+    if not version:
+        return ["读不到 src/common.py 的 VERSION"], 0
+    dist = os.path.join(ROOT, "dist")
+    exe = os.path.join(dist, f"抖音收藏整理-Setup-V{version}.exe")
+    zpath = os.path.join(dist, f"抖音收藏整理-V{version}-便携版.zip")
+    if not os.path.isfile(exe) or not os.path.isfile(zpath):
+        return [f"缺少 V{version} 安装包或便携版"], 0
+    secrets = local_secrets or []
+
+    def hit(text, where):
+        low = text.lower()
+        for i, s in enumerate(secrets, 1):
+            if s and s in low:
+                problems.append(f"{where} 命中名单第 {i} 项")
+
+    with open(exe, "rb") as f:
+        hit(f.read().decode("utf-8", "ignore"), "Setup exe")
+    checked += 1
+
+    allowed = {"抖音收藏整理/抖音收藏整理.exe", "抖音收藏整理/说明.md",
+               "抖音收藏整理/版本.txt"}
+    with zipfile.ZipFile(zpath) as z:
+        names = set(z.namelist())
+        extra = names - allowed
+        if extra:
+            problems.append(f"便携版夹带了 {len(extra)} 个非预期文件")
+        for name in names:
+            if name.lower().endswith((".md", ".txt", ".json", ".csv", ".log")):
+                hit(z.read(name).decode("utf-8", "ignore"), f"便携版 {name}")
+                checked += 1
+    checked += 1
+
+    spec = os.path.join(ROOT, "build", "douyin_sync.spec")
+    if os.path.isfile(spec):
+        with open(spec, encoding="utf-8", errors="replace") as f:
+            spec_text = f.read()
+        for bad in ("_data", "settings.json", "prefs.json", "_probe.log",
+                    "验证输出", "整理输出"):
+            if bad in spec_text:
+                problems.append(f"spec 含本机数据 {bad}")
+        # spec 是构建中间产物（不进 Git、不上传），里面本来就有本机项目路径，
+        # 只用上面的白名单判断「有没有把本机数据打进 exe」，不拿敏感词名单扫它。
+        checked += 1
+    return problems, checked
+
+
+def scan_public_copy(version):
+    """对外文案：版本、动作名、工具数、交付文件名，必须与本版源码一致。"""
+    problems = []
+    if not version:
+        return ["读不到 VERSION"]
+    stale = ("_导出说明.txt", "_待加工.csv", "_导出清单.csv", "开始整理", "同步整理")
+    user_docs = ("README.md", "dist/README.md", "build/README.template.md",
+                 "src/installer.py", "build/build.py")
+    for rel in user_docs:
+        text = read_text(rel)
+        if text is None:
+            problems.append(f"{rel} 缺失")
+            continue
+        for word in stale:
+            if word in text:
+                problems.append(f"{rel} 残留旧文案 {word}")
+    checks = {
+        "README.md": (f"version-V{version}-", f"Setup-V{version}"),
+        "dist/README.md": (f"# 抖音收藏整理 V{version}", "dy_report"),
+        "build/README.template.md": ("V{VERSION}", "dy_report"),
+        "build/build.py": ("dy_report", "《导出报告.md》"),
+        "docs/工程说明.md": (f"# 抖音收藏整理 · V{version}", "14/14 PASS"),
+    }
+    for rel, needles in checks.items():
+        text = read_text(rel) or ""
+        for n in needles:
+            if n not in text:
+                problems.append(f"{rel} 缺 {n}")
+    return problems
+
+
 def main():
     files = tracked_files()
     local_secrets = load_local_secrets()
@@ -161,6 +249,13 @@ def main():
         if r.returncode != 0:
             orphan.append(t)
     check("所有标签都在当前历史内", not orphan, f"孤儿 tag {orphan}" if orphan else "")
+
+    ver = current_version()
+    art, scanned = scan_artifacts(local_secrets, ver)
+    check("安装包与便携版没有夹带本机信息", not art,
+          f"扫描 {scanned} 处 · {art[:3]}")
+    copy = scan_public_copy(ver)
+    check("对外材料版本与动作名一致", not copy, f"{len(copy)} 处 · {copy[:3]}")
 
     failed = [n for n, ok in results if not ok]
     print(f"\n合计 {len(results)} 项 · 失败 {len(failed)} · 跟踪文件 {len(files)} 个")

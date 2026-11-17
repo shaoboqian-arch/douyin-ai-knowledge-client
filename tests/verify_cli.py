@@ -144,6 +144,18 @@ def main():
         check("写出 4 个 md", len([1 for b, _d, fs in os.walk(data.get("batch_path", ""))
                                 for f in fs if f.endswith(".md") and f != "_导出报告.md"]) == 4)
 
+        print(f"== {label} 首启（无设置文件） ==")
+        env2 = dict(env)
+        env2["DYSYNC_SETTINGS"] = os.path.join(tmp, "fresh", "settings.json")
+        r = run(base + ["--cli", "--status"], env2)
+        try:
+            fresh = json.loads(r.stdout)
+        except ValueError:
+            fresh = {}
+        check("首启 ready=false", fresh.get("ready") is False, str(fresh)[:160])
+        check("首启只报项目目录一个缺口", fresh.get("missing") == ["项目目录"],
+              str(fresh.get("missing")))
+
         print(f"== {label} 参数错误 ==")
         r = run(base + ["--cli", "--nope"], env)
         check("无动作时退出码 2", r.returncode == 2, str(r.returncode))

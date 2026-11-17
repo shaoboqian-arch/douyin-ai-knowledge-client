@@ -279,14 +279,11 @@ def render_md(report):
 
 
 def render_section(report):
-    """作为《导出报告》的一节渲染，不重复一级标题与元信息。"""
+    """作为《导出报告》的一节渲染：用列表而不是宽表格，便于阅读。"""
     lines = ["## 入库结果", ""]
+    icon = {"ok": "✅", "warn": "⚠️", "skip": "➖"}
     for r in report.get("rows") or []:
-        icon = {"ok": "✅", "warn": "⚠️", "skip": "➖"}.get(r.get("状态"), "")
-        text = str(r.get("结果") or "").replace("|", "\\|")
-        lines.append(f"| {r.get('环节')} | {icon} {text} |")
-    lines.insert(2, "| 环节 | 结果 |")
-    lines.insert(3, "|---|---|")
+        lines.append(f"- {icon.get(r.get('状态'), '')} **{r.get('环节')}**：{r.get('结果')}")
     return "\n".join(lines) + "\n"
 
 

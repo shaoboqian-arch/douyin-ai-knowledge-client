@@ -34,6 +34,10 @@ WARN = "#ffb020"
 TRACK = "#232a38"
 WHITE = "#ffffff"
 
+# 字体族唯一真源：fonts() 探测到系统可用的 CJK 字体后写入；所有控件的默认字体都读它，
+# 避免「一部分走 fonts()、一部分写死字体名」造成同一窗口里两套字族。
+FONT_FAMILY = "Microsoft YaHei UI"
+
 
 def enable_dpi():
     """进程级 DPI 感知，必须在创建任何 Tk 根窗口之前调用。"""
@@ -59,12 +63,14 @@ def center(root, width, height):
 
 
 def fonts(root):
+    global FONT_FAMILY
     try:
         fams = set(tkfont.families(root))
     except Exception:
         fams = set()
     fam = next((n for n in ("Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", "Segoe UI")
                 if n in fams), "TkDefaultFont")
+    FONT_FAMILY = fam
     return (fam, 10), (fam, 9), fam
 
 
@@ -151,10 +157,10 @@ def contrast(fg, bg):
 class Tooltip:
     """仅鼠标悬停时出现的完整文本，用来替代常驻的解释性文字。"""
 
-    def __init__(self, widget, text_func, font=("Microsoft YaHei UI", 9)):
+    def __init__(self, widget, text_func, font=None):
         self.widget = widget
         self.text_func = text_func
-        self.font = font
+        self.font = font or (FONT_FAMILY, 9)
         self.tip = None
         widget.bind("<Enter>", self.show, add="+")
         widget.bind("<Leave>", self.hide, add="+")
@@ -203,7 +209,7 @@ class CapsuleButton(tk.Canvas):
         self._state = "normal"
         self._hover = False
         self._focus = False
-        self._font = font or ("Microsoft YaHei UI", 10, "bold" if primary else "normal")
+        self._font = font or (FONT_FAMILY, 10, "bold" if primary else "normal")
         self._box_w, self._box_h = width, height
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
@@ -363,7 +369,7 @@ class RoundedEntry(tk.Frame):
         if self._path_mode:
             return
         self._path_mode = True
-        Tooltip(self.entry, self.get, font=font or ("Microsoft YaHei UI", 9))
+        Tooltip(self.entry, self.get, font=font or (FONT_FAMILY, 9))
         self.entry.bind("<FocusOut>", lambda _e: self.reveal_end(), add="+")
         try:
             self.after_idle(self.reveal_end)
@@ -628,7 +634,7 @@ class PhaseBadge(tk.Canvas):
         super().__init__(master, width=width, height=height, highlightthickness=0,
                          bd=0, bg=BG, **kw)
         self._text = text
-        self._font = font or ("Microsoft YaHei UI", 9)
+        self._font = font or (FONT_FAMILY, 9)
         self._mode = "pending"
         self._box_w, self._box_h = width, height
         self.bind("<Configure>", lambda _e: self._draw())
@@ -737,7 +743,7 @@ class DatePicker:
 
     def __init__(self, entry, font=None, embedded=False, on_pick=None):
         self.entry = entry
-        self.font = font or ("Microsoft YaHei UI", 9)
+        self.font = font or (FONT_FAMILY, 9)
         self.on_pick = on_pick
         self.win = None
         self._trigger = None
@@ -810,12 +816,10 @@ class DatePicker:
             w.destroy()
         head = tk.Frame(self._body, bg=PANEL)
         head.pack(fill="x")
-        CapsuleButton(head, text="‹", command=lambda: self._shift(-1),
-                      width=28, height=24, font=self.font, bg=PANEL).pack(side="left")
+        self._arrow(head, "‹", -1).pack(side="left")
         tk.Label(head, text=f"{self._year}-{self._month:02d}", bg=PANEL, fg=TEXT,
                  font=self.font).pack(side="left", expand=True)
-        CapsuleButton(head, text="›", command=lambda: self._shift(1),
-                      width=28, height=24, font=self.font, bg=PANEL).pack(side="right")
+        self._arrow(head, "›", 1).pack(side="right")
         grid = tk.Frame(self._body, bg=PANEL)
         grid.pack(pady=(6, 0))
         for i, name in enumerate("一二三四五六日"):
@@ -841,6 +845,15 @@ class DatePicker:
         foot.pack(fill="x", pady=(8, 0))
         CapsuleButton(foot, text="清除 / 回到不限", command=self._clear,
                       width=168, height=26, font=self.font, bg=PANEL).pack()
+
+    def _arrow(self, parent, text, delta):
+        """月份切换箭头：纯文字标签，不参与焦点，避免出现按钮焦点框。"""
+        lb = tk.Label(parent, text=text, bg=PANEL, fg=TEXT, font=(self.font[0], 12),
+                      width=2, cursor="hand2", takefocus=0)
+        lb.bind("<Button-1>", lambda _e: self._shift(delta))
+        lb.bind("<Enter>", lambda _e: lb.configure(bg=SURFACE, fg=CYAN))
+        lb.bind("<Leave>", lambda _e: lb.configure(bg=PANEL, fg=TEXT))
+        return lb
 
     def _shift(self, delta):
         m = self._month + delta

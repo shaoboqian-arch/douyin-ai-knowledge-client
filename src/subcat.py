@@ -5,7 +5,7 @@
 这里只在其下再分一层，解决「视频/图集」与「7 个大类」都太粗的问题。
 
 判定是确定性的有序规则（标题 + 话题 + 归纳 + 介绍 + 转写节选），
-命中词写进清单的「子类别依据」列，便于逐条复核；不调用任何模型。
+命中词写进笔记 frontmatter 的「子类别依据」，便于逐条复核；不调用任何模型。
 
 顺序即产品判断（AI）：
   1. Skill / Agent 怎么用 —— 方法论优先于资源清单
@@ -118,7 +118,9 @@ def _hits(rx, text, limit=4):
 def _result(name, hits):
     hits = [h for h in hits if h]
     conf = "高" if len(hits) >= 2 else ("中" if hits else "低")
-    return {"子类别": name, "依据": "、".join(hits[:6]), "置信度": conf}
+    # 兜底也要给出可复核的理由：空依据会让人分不清「没跑规则」和「跑了但没命中」。
+    hint = "、".join(hits[:6]) if hits else "未命中具体规则，落到兜底"
+    return {"子类别": name, "依据": hint, "置信度": conf}
 
 
 def classify(row, transcript=""):

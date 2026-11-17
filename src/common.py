@@ -3,7 +3,7 @@
 import os
 import sys
 
-VERSION = "0.1.3"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
+VERSION = "0.1.4"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
 APP_NAME = "抖音收藏整理"
 MCP_SERVER_NAME = "douyin-fav-sync"
 EXE_NAME = "抖音收藏整理.exe"
@@ -53,6 +53,9 @@ def data_dir():
 
 
 def prefs_path():
+    env = os.environ.get("DYSYNC_PREFS")
+    if env:
+        return env
     return os.path.join(data_dir(), "prefs.json")
 
 
@@ -112,9 +115,17 @@ def format_gap_rows(gaps, limit=200, title_width=70, reason_width=40):
         seq = it.get("序号")
         if title and counts.get(title, 0) > 1 and seq not in (None, ""):
             display = f"{title}（{seq}）"
-        full = display if not reason else (display + "\n" + reason)
+        parts = [display]
+        if reason:
+            parts.append(f"缺什么：{reason}")
+        link = clip_text(str(it.get("作品链接") or ""), 10 ** 9)
+        if link:
+            parts.append(f"作品：{link}")
+        advice = clip_text(str(it.get("建议") or ""), 10 ** 9)
+        if advice:
+            parts.append(f"建议：{advice}")
         rows.append((clip_text(display, title_width),
-                     clip_text(reason, reason_width), full))
+                     clip_text(reason, reason_width), "\n".join(parts)))
     return rows
 
 

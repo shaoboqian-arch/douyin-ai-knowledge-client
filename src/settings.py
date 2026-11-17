@@ -17,17 +17,17 @@ from ui_kit import (
 )
 
 
-def _card(parent, title, subtitle=""):
+def _card(parent, title, title_font, sub_font, subtitle=""):
     outer = tk.Frame(parent, bg=CARD, highlightbackground=CARD_LINE,
                      highlightthickness=1)
     inner = tk.Frame(outer, bg=CARD, padx=18, pady=14)
     inner.pack(fill="both", expand=True)
     head = tk.Frame(inner, bg=CARD)
     head.pack(fill="x", pady=(0, 12))
-    tk.Label(head, text=title, font=("Microsoft YaHei UI", 11, "bold"),
+    tk.Label(head, text=title, font=title_font,
              bg=CARD, fg=TEXT, anchor="w").pack(side="left")
     if subtitle:
-        tk.Label(head, text=subtitle, font=("Microsoft YaHei UI", 9),
+        tk.Label(head, text=subtitle, font=sub_font,
                  bg=CARD, fg=MUTED, anchor="w").pack(side="left", padx=(10, 0))
     body = tk.Frame(inner, bg=CARD)
     body.pack(fill="both", expand=True)
@@ -57,12 +57,10 @@ class Settings:
         f.columnconfigure(0, weight=1)
 
         tk.Label(f, text="设置", font=(family, 16, "bold"), bg=BG, fg=TEXT,
-                 anchor="w").grid(row=0, column=0, sticky="w")
-        tk.Label(f, text="改完点「保存」生效。", font=font_small, bg=BG, fg=MUTED,
-                 anchor="w").grid(row=1, column=0, sticky="w", pady=(2, 14))
+                 anchor="w").grid(row=0, column=0, sticky="w", pady=(0, 14))
 
         # ---- 采集来源
-        src_card, src = _card(f, "采集来源", "从哪里采集、采集谁的数据")
+        src_card, src = _card(f, "采集来源", (family, 11, "bold"), self.font_small)
         src_card.grid(row=2, column=0, sticky="ew")
         src.columnconfigure(1, weight=1)
 
@@ -91,7 +89,7 @@ class Settings:
         self._hint(src, 5, "低于此数视为账号异常并中止")
 
         # ---- 知识库
-        kb_card, kb = _card(f, "知识库", "可选；装 Obsidian 后可重建笔记与图谱")
+        kb_card, kb = _card(f, "知识库", (family, 11, "bold"), self.font_small, "可选")
         kb_card.grid(row=3, column=0, sticky="ew", pady=(14, 0))
         kb.columnconfigure(1, weight=1)
 
@@ -121,13 +119,13 @@ class Settings:
         self.kb_stats.grid(row=2, column=0, columnspan=4, sticky="w", pady=(8, 0))
 
         # ---- 高级（MCP）
-        adv_card, adv = _card(f, "高级")
+        adv_card, adv = _card(f, "高级", (family, 11, "bold"), self.font_small)
         adv_card.grid(row=4, column=0, sticky="ew", pady=(14, 0))
         adv.columnconfigure(0, weight=1)
         head = tk.Frame(adv, bg=CARD)
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(0, weight=1)
-        tk.Label(head, text="MCP 接入（供其他本地工具调用）", font=font_main,
+        tk.Label(head, text="MCP 接入", font=font_main,
                  bg=CARD, fg=TEXT).grid(row=0, column=0, sticky="w")
         self.mcp_toggle = CapsuleButton(head, text="展开", command=self.toggle_mcp,
                                         width=64, height=28, font=self.font_small)
@@ -176,9 +174,10 @@ class Settings:
         self.account.entry.configure(state="readonly")
 
         self.root.bind("<Escape>", lambda _e: self.close())
+        self.root.bind("<Destroy>", self._cancel_poll)
         self.refresh_obsidian()
         self.refresh_state()
-        self.root.after(120, self._poll_scan)
+        self._poll_job = self.root.after(120, self._poll_scan)
 
     # ---------------------------------------------------------------- 组件
     def _label(self, parent, row, text):
@@ -281,21 +280,33 @@ class Settings:
         self.set_state("正在常见位置查找 TikTokDownloader（最多几秒）…")
 
         def work():
-            self._scan_q.put(detect.candidate_project_dirs(
-                self.project.get().strip(), deep=True))
+            self._scan_q.put(("scan", detect.candidate_project_dirs(
+                self.project.get().strip(), deep=True)))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _cancel_poll(self, _e=None):
+        try:
+            if getattr(self, "_poll_job", None):
+                self.root.after_cancel(self._poll_job)
+        except (tk.TclError, ValueError):
+            pass
+        self._poll_job = None
 
     def _poll_scan(self):
         try:
             while True:
-                self._scan_done(self._scan_q.get_nowait())
+                kind, payload = self._scan_q.get_nowait()
+                if kind == "scan":
+                    self._scan_done(payload)
+                elif kind == "test":
+                    self._test_done(payload)
         except queue.Empty:
             pass
         except tk.TclError:
             return
         try:
-            self.root.after(120, self._poll_scan)
+            self._poll_job = self.root.after(120, self._poll_scan)
         except tk.TclError:
             pass
 
@@ -430,7 +441,7 @@ class Settings:
 
         def work():
             r = mcpcfg.test_connection()
-            self.root.after(0, lambda: self._test_done(r))
+            self._scan_q.put(("test", r))
 
         threading.Thread(target=work, daemon=True).start()
 

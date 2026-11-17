@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""初始化本机环境：项目目录 → 抖音账号 → 知识库目录，三项就绪后主按钮才变成「开始整理」。
+"""初始化本机环境：项目目录 → 抖音账号 → 知识库目录，三项就绪后主按钮才变成「⚠️ 全仓同步」。
 
 对应 wx V0.4.3 的三步初始化（账号目录 / 数据库密钥 / 图片密钥）；
 本项目把「密钥」换成「账号确认」——抖音这边登录态在项目自己的 Volume/settings.json 里，
@@ -112,7 +112,8 @@ class Setup:
             self.set_state("第 1 步：点「自动发现」或「浏览…」选项目目录")
         self.root.after_idle(self.project.reveal_end)
         self.root.after_idle(self.kb.reveal_end)
-        self.root.after(120, self._poll_scan)
+        self.root.bind("<Destroy>", self._cancel_poll)
+        self._poll_job = self.root.after(120, self._poll_scan)
 
     # ---------------------------------------------------------------- 动作
     def set_state(self, text, color=MUTED):
@@ -140,21 +141,32 @@ class Setup:
 
         def work():
             # 子线程只放结果，界面由主线程的轮询取走（tkinter 不保证跨线程 after 安全）
-            self._scan_q.put(detect.candidate_project_dirs(extra, deep=True))
+            self._scan_q.put(("scan", detect.candidate_project_dirs(extra, deep=True)))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _cancel_poll(self, _e=None):
+        try:
+            if getattr(self, "_poll_job", None):
+                self.root.after_cancel(self._poll_job)
+        except (tk.TclError, ValueError):
+            pass
+        self._poll_job = None
 
     def _poll_scan(self):
         try:
             while True:
-                hits = self._scan_q.get_nowait()
-                self._scan_done(hits)
+                kind, payload = self._scan_q.get_nowait()
+                if kind == "scan":
+                    self._scan_done(payload)
+                elif kind == "probe":
+                    self._probe_done(*payload)
         except queue.Empty:
             pass
         except tk.TclError:
             return
         try:
-            self.root.after(120, self._poll_scan)
+            self._poll_job = self.root.after(120, self._poll_scan)
         except tk.TclError:
             pass
 
@@ -218,7 +230,7 @@ class Setup:
             r = pipeline.run_script(py, os.path.join(project, "probe_account.py"),
                                     [], project, log)
             info = pipeline.scan_stdout(r.get("lines") or [])
-            self.root.after(0, lambda: self._probe_done(r, info))
+            self._scan_q.put(("probe", (r, info)))
 
         threading.Thread(target=work, daemon=True).start()
 

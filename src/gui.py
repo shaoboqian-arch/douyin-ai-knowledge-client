@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""主界面：先写清「导出到哪、导出哪段」，再给两个明确的动作（同步整理 / 仅导出）。"""
+"""主界面：先写清「导出到哪、导出哪段」，再给两个明确的动作（全仓同步 / 仅导出）。"""
 import datetime as dt
 import json
 import os
@@ -13,7 +13,10 @@ import config
 import engine
 import settings as settings_ui
 import setup_env
-from common import APP_NAME, PHASES, VERSION, app_dir, is_frozen, prefs_path
+from common import (
+    APP_NAME, PHASES, VERSION, app_dir, format_gap_rows, gap_heading,
+    is_frozen, prefs_path,
+)
 from ui_kit import (
     ACCENT, BG, BORDER, CARD, CARD_LINE, CYAN, DONE_BG, ERR, ERR_BG, MUTED,
     PANEL, SURFACE, TEXT, WARN,
@@ -22,7 +25,7 @@ from ui_kit import (
 )
 
 W = 780
-BASE_H = 424
+BASE_H = 326
 PANEL_H = 372
 HINT_H = 76
 
@@ -58,13 +61,13 @@ def _blank_stats():
     return {g: {"total": 0, "ok": 0, "gap": 0} for g, _ in GROUPS}
 
 
-def _card(parent, title):
+def _card(parent, title, title_font):
     """带标题的分区卡片，返回可放内容的 body。"""
     outer = tk.Frame(parent, bg=CARD, highlightbackground=CARD_LINE,
                      highlightthickness=1)
     inner = tk.Frame(outer, bg=CARD, padx=18, pady=14)
     inner.pack(fill="both", expand=True)
-    tk.Label(inner, text=title, font=("Microsoft YaHei UI", 11, "bold"),
+    tk.Label(inner, text=title, font=title_font,
              bg=CARD, fg=TEXT, anchor="w").pack(fill="x", pady=(0, 12))
     body = tk.Frame(inner, bg=CARD)
     body.pack(fill="both", expand=True)
@@ -83,6 +86,9 @@ class App:
         self.full_state = ""
         self.env_message = ""
         self.env_ready = False
+        self.rows_ok = False
+        self.rows_mtime = ""
+        self._env_seq = 0
         self.last_batch = ""
         self.last_state = {}
         self.report = {}
@@ -103,7 +109,7 @@ class App:
         f = tk.Frame(root, bg=BG, padx=24, pady=18)
         f.pack(fill="both", expand=True)
         f.columnconfigure(0, weight=1)
-        f.rowconfigure(7, weight=1)
+        f.rowconfigure(6, weight=1)
 
         # 标题行
         head = tk.Frame(f, bg=BG)
@@ -111,15 +117,21 @@ class App:
         head.columnconfigure(0, weight=1)
         tk.Label(head, text="抖音收藏整理", font=(family, 16, "bold"),
                  bg=BG, fg=TEXT, anchor="w").grid(row=0, column=0, sticky="w")
-        CapsuleButton(head, text="设置", command=self.open_settings, width=76,
-                      height=30, font=font_small).grid(row=0, column=1, sticky="e")
+        self.btn = CapsuleButton(head, text="⚠️ 全仓同步", command=self.primary_action,
+                                 primary=True, width=118, height=32,
+                                 font=(family, 10, "bold"))
+        self.btn.grid(row=0, column=1, sticky="e", padx=(0, 8))
+        Tooltip(self.btn, lambda: "全量采集全部收藏后重建知识库，再导出所选范围；约 25 分钟",
+                font=font_small)
+        CapsuleButton(head, text="设置", command=self.open_settings, width=72,
+                      height=32, font=font_small).grid(row=0, column=2, sticky="e")
 
         self.summary = tk.Label(f, text="正在读取知识库现状…", font=font_small,
                                 bg=BG, fg=MUTED, anchor="w")
         self.summary.grid(row=1, column=0, sticky="w", pady=(2, 14))
 
         # 导出设置
-        card, body = _card(f, "导出设置")
+        card, body = _card(f, "导出设置", (family, 11, "bold"))
         card.grid(row=2, column=0, sticky="ew")
         body.columnconfigure(1, weight=1)
 
@@ -127,13 +139,18 @@ class App:
             row=0, column=0, sticky="w", pady=(0, 12))
         self.dest = RoundedEntry(body, font=font_main, path=True, path_font=font_small)
         self.dest.grid(row=0, column=1, sticky="ew", padx=(14, 10), pady=(0, 12))
-        CapsuleButton(body, text="浏览…", command=self.pick, width=80, height=36,
+        CapsuleButton(body, text="浏览…", command=self.pick, width=88, height=36,
                       font=font_small).grid(row=0, column=2, pady=(0, 12))
+        self.export_btn = CapsuleButton(body, text="仅导出", command=self.start_export,
+                                        width=88, height=36, font=font_small)
+        self.export_btn.grid(row=1, column=2, pady=(0, 2))
+        self.export_hint = "用项目里已有的数据写批次，不采集、不联网，秒级完成"
+        Tooltip(self.export_btn, lambda: self.export_hint, font=font_small)
 
         tk.Label(body, text="作品发布日期", font=font_main, bg=CARD, fg=MUTED).grid(
             row=1, column=0, sticky="w")
         rng = tk.Frame(body, bg=CARD)
-        rng.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(14, 0))
+        rng.grid(row=1, column=1, sticky="ew", padx=(14, 10))
         rng.columnconfigure(0, weight=1)
         rng.columnconfigure(2, weight=1)
         self.frm = RoundedEntry(rng, font=font_main, width=10, pxwidth=170,
@@ -153,33 +170,22 @@ class App:
 
         self.range_hint = tk.Label(body, text="留空表示全部；只影响导出的笔记，不影响采集",
                                    font=font_small, bg=CARD, fg=MUTED, anchor="w")
-        self.range_hint.grid(row=2, column=1, columnspan=2, sticky="w",
-                             padx=(14, 0), pady=(6, 0))
+        self.range_hint.grid(row=2, column=1, sticky="w",
+                             padx=(14, 10), pady=(6, 0))
 
-        # 动作
-        actions = tk.Frame(f, bg=BG)
-        actions.grid(row=3, column=0, sticky="ew", pady=(16, 0))
-        actions.columnconfigure(0, weight=3)
-        actions.columnconfigure(1, weight=2)
-        self.btn = CapsuleButton(actions, text="同步整理", command=self.primary_action,
-                                 primary=True, height=44, font=(family, 11, "bold"))
-        self.btn.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        self.export_btn = CapsuleButton(actions, text="仅导出", command=self.start_export,
-                                        height=44, font=(family, 10, "bold"))
-        self.export_btn.grid(row=0, column=1, sticky="ew")
-
-        self.action_hint = tk.Label(
-            f, text="同步整理：全量采集 + 重建知识库，约 25 分钟\n"
-                    "仅导出：用现有数据写批次，秒级",
-            font=font_small, bg=BG, fg=MUTED, anchor="w", justify="left")
-        self.action_hint.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        self.first_hint = tk.Label(
+            f, text="首次使用：先做一次「全仓同步」（约 25 分钟）\n"
+                    "完成后「仅导出」才可用",
+            font=font_small, bg=BG, fg=WARN, anchor="w", justify="left")
+        self.first_hint.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        self.first_hint.grid_remove()
 
         self.prog = ProgressBar(f, height=8)
-        self.prog.grid(row=5, column=0, sticky="ew", pady=(12, 0))
+        self.prog.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         self.prog.grid_remove()
 
         sf = tk.Frame(f, bg=BG)
-        sf.grid(row=6, column=0, sticky="ew", pady=(12, 0))
+        sf.grid(row=5, column=0, sticky="ew", pady=(10, 0))
         sf.columnconfigure(0, weight=1)
         self.state = tk.Label(sf, text="", font=font_small, fg=MUTED, bg=BG,
                               anchor="w", wraplength=360, justify="left", takefocus=1)
@@ -209,7 +215,7 @@ class App:
             w.bind("<space>", lambda _e, g=getter: self.show_full(g()))
 
         self.panel = self._build_panel(f)
-        self.panel.grid(row=7, column=0, sticky="nsew", pady=(12, 0))
+        self.panel.grid(row=6, column=0, sticky="nsew", pady=(12, 0))
         self.panel.grid_remove()
 
         prefs = _load_prefs()
@@ -223,7 +229,7 @@ class App:
         root.bind("<Configure>", self._on_configure)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._after_id = root.after(60, self.poll)
-        threading.Thread(target=self.env_check, daemon=True).start()
+        self.refresh_env()
         self.root.after(120, lambda: self._restore_last(prefs))
         self.root.after_idle(self.dest.reveal_end)
         self.root.after(500, self._schedule_range_check)
@@ -262,10 +268,17 @@ class App:
                 v.grid(row=i, column=j, padx=(0, 6))
                 self.cell[(g, key)] = v
 
-        self.gap_title = tk.Label(p, text="待加工 0", font=self.font_small,
+        gap_row = tk.Frame(p, bg=CARD)
+        gap_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 4))
+        gap_row.columnconfigure(0, weight=1)
+        self.gap_title = tk.Label(gap_row, text="待加工 0", font=self.font_small,
                                   fg=MUTED, bg=CARD, anchor="w", justify="left",
-                                  wraplength=620)
-        self.gap_title.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 4))
+                                  wraplength=560)
+        self.gap_title.grid(row=0, column=0, sticky="w")
+        self.patch_btn = CapsuleButton(gap_row, text="补加工", command=self.open_gaps,
+                                       width=76, height=26, font=self.font_small)
+        self.patch_btn.grid(row=0, column=1, sticky="e")
+        self.patch_btn.grid_remove()
         self.tree = ttk.Treeview(p, columns=("name", "reason"), show="headings", height=4)
         self.tree.heading("name", text="条目")
         self.tree.heading("reason", text="缺什么")
@@ -293,6 +306,8 @@ class App:
         h = BASE_H
         if self.busy or self.prog.winfo_manager():
             h += 20
+        if self.first_hint.winfo_manager():
+            h += 40          # 两行提示 + 上边距；24 会把底部状态行裁掉
         if self.panel_visible:
             h += PANEL_H
             if self.hint_visible:
@@ -345,12 +360,68 @@ class App:
             lbl.configure(text=f"{self.stats[g][key]:,}")
         n = len(self.gaps)
         self.gap_title.configure(text=gap_heading(n), fg=ERR if n else MUTED)
+        if n:
+            self.patch_btn.grid()
+        else:
+            self.patch_btn.grid_remove()
         self.tree.delete(*self.tree.get_children())
         self._gap_full = {}
         for title, reason, full in format_gap_rows(self.gaps):
             iid = self.tree.insert("", "end", values=(title, reason))
             self._gap_full[iid] = full
         self.dirty = False
+
+    def open_gaps(self):
+        """把待加工条目整理成一份可复制的待办，交给外部 AI 加工。"""
+        if not self.gaps:
+            return
+        win = tk.Toplevel(self.root)
+        win.title(f"待加工 · {len(self.gaps)} 条")
+        win.configure(bg=BG)
+        win.geometry("760x560")
+        apply_icon(win)
+        f = tk.Frame(win, bg=BG, padx=18, pady=14)
+        f.pack(fill="both", expand=True)
+        tk.Label(f, text=f"待加工 {len(self.gaps)} 条", font=(self.family, 13, "bold"),
+                 bg=BG, fg=TEXT, anchor="w").pack(fill="x")
+        tk.Label(f, text="这些条目缺 AI 判定 / 转写 / 介绍 / 概念；补齐后点「仅导出」刷新批次，"
+                        "不必重新采集。", font=self.font_small, bg=BG, fg=MUTED,
+                 anchor="w", justify="left").pack(fill="x", pady=(2, 10))
+        box = tk.Text(f, font=self.font_small, bg=PANEL, fg=TEXT, relief="flat",
+                      wrap="word", padx=10, pady=8)
+        box.pack(fill="both", expand=True)
+        lines = []
+        for i, it in enumerate(self.gaps, 1):
+            lines.append(f"{i}. [{it.get('序号','')}] {it.get('标题','')}")
+            lines.append(f"   缺：{it.get('原因','')}")
+            if it.get("作品链接"):
+                lines.append(f"   作品：{it['作品链接']}")
+        box.insert("1.0", "\n".join(lines))
+        box.configure(state="disabled")
+        row = tk.Frame(f, bg=BG)
+        row.pack(fill="x", pady=(10, 0))
+        row.columnconfigure(0, weight=1)
+
+        def copy():
+            try:
+                win.clipboard_clear()
+                win.clipboard_append("\n".join(lines))
+                self.set_state("待加工清单已复制", CYAN)
+            except tk.TclError:
+                pass
+
+        def open_work():
+            project = config.load().get("project_dir", "")
+            p = os.path.join(project, "work") if project else ""
+            if p and os.path.isdir(p):
+                os.startfile(p)
+
+        CapsuleButton(row, text="复制清单", command=copy, width=92, height=32,
+                      font=self.font_small).grid(row=0, column=1, padx=(0, 8))
+        CapsuleButton(row, text="打开 work", command=open_work, width=96, height=32,
+                      font=self.font_small).grid(row=0, column=2, padx=(0, 8))
+        CapsuleButton(row, text="关闭", command=win.destroy, width=72, height=32,
+                      font=self.font_small).grid(row=0, column=3)
 
     def _open_gap(self, _e=None):
         sel = self.tree.selection()
@@ -390,11 +461,12 @@ class App:
                     self.badges[name].set_mode("done")
 
     # ---------------------------------------------------------------- 环境
-    def env_check(self):
-        self.q.put(("env", engine.safe_call(engine.status)))
+    def env_check(self, seq=0):
+        self.q.put(("env", (engine.safe_call(engine.status), seq)))
 
     def refresh_env(self):
-        threading.Thread(target=self.env_check, daemon=True).start()
+        self._env_seq += 1
+        threading.Thread(target=self.env_check, args=(self._env_seq,), daemon=True).start()
 
     def _on_root_return(self, event):
         if event.widget is self.btn:
@@ -417,8 +489,14 @@ class App:
             self.btn.configure(text="停止", command=self.stop, state="normal")
             self.export_btn.configure(state="disabled")
         elif self.env_ready:
-            self.btn.configure(text="同步整理", command=self.start, state="normal")
-            self.export_btn.configure(state="normal")
+            self.btn.configure(text="⚠️ 全仓同步", command=self.start, state="normal")
+            self.export_btn.configure(state="normal" if self.rows_ok else "disabled")
+            if not self.rows_ok:
+                self.export_hint = "还没有整理结果：先点右上角「全仓同步」跑一次"
+            else:
+                stamp = self.rows_mtime
+                self.export_hint = (f"用现有数据写批次（截至 {stamp}），不采集、不联网，秒级完成"
+                                    if stamp else "用项目里已有的数据写批次，不采集、不联网")
         else:
             self.btn.configure(text="初始化本机环境", command=self.open_setup_env,
                                state="normal")
@@ -426,6 +504,8 @@ class App:
 
     def apply_env(self, payload):
         self.env_ready = bool(payload.get("ready"))
+        self.rows_ok = bool(payload.get("rows_ok"))
+        self.rows_mtime = payload.get("rows_mtime") or ""
         missing = payload.get("missing") or []
         acct = (payload.get("account") or {}).get("nickname") or ""
         stats = payload.get("kb_stats") or {}
@@ -435,7 +515,7 @@ class App:
                      f"{stats.get('ai', 0):,} AI 笔记 · {stats.get('concepts', 0):,} 概念 · "
                      f"{stats.get('pairs', 0):,} 共现")
         else:
-            self.summary.configure(text="尚未建立知识库；首次使用请先完成初始化")
+            self.summary.configure(text="尚未建立知识库；首次使用先做一次「全仓同步」")
         if self.env_ready:
             self.show_env("")
             if not self.busy:
@@ -445,6 +525,11 @@ class App:
             if not self.busy:
                 self.set_state(("缺少 " + "、".join(missing)) if missing
                                else (payload.get("message") or "环境未就绪"), ERR)
+        if self.env_ready and not self.rows_ok:
+            self.first_hint.grid()
+        else:
+            self.first_hint.grid_remove()
+        self.resize()
         if not self.busy:
             self._sync_primary()
 
@@ -555,7 +640,8 @@ class App:
         return messagebox.askyesno(
             "范围内没有条目",
             f"所选作品发布日期范围内 0 条。\n\n"
-            f"「同步整理」会先采集全部收藏（约 25 分钟），再重建知识库，最后写出一批空清单。\n"
+            f"「⚠️ 全仓同步」仍会先采集全部收藏（约 25 分钟）、重建知识库，"
+            f"最后写出一份没有明细的《导出报告》。\n"
             f"仍要继续吗？",
             parent=self.root)
 
@@ -731,7 +817,8 @@ class App:
             else:
                 new = int(payload.get("new_count") or 0)
                 self.set_state(f"完成 · {total:,} 条 · 新增 {new:,} · 待加工 {gaps:,}", CYAN)
-            self._show_hint(f"待加工 {gaps:,} 条：明细见批次《导出报告》的待加工一节；补齐后重新整理。" if gaps else "")
+            self._show_hint(f"待加工 {gaps:,} 条：明细见批次《导出报告》的待加工一节；"
+                            "补齐后点「仅导出」刷新批次。" if gaps else "")
         else:
             err = payload.get("error") or "操作失败"
             self.set_state(err, ERR)
@@ -749,6 +836,7 @@ class App:
                 self._show_hint("")
                 self.retry_btn.grid_remove()
         self._schedule_range_check()
+        self.refresh_env()
         self.resize()
 
     def _show_hint(self, text):
@@ -804,7 +892,10 @@ class App:
                 elif kind == "event":
                     self.handle_event(payload)
                 elif kind == "env":
-                    self.apply_env(payload)
+                    data, seq = payload if isinstance(payload, tuple) else (payload, None)
+                    if seq is not None and seq != self._env_seq:
+                        continue        # 丢弃过期的环境检查结果
+                    self.apply_env(data)
                 elif kind == "retry_done":
                     self._finish(payload, mode="retry")
                 elif kind == "export_done":
@@ -821,26 +912,6 @@ class App:
             self._after_id = self.root.after(60 if self.busy else 140, self.poll)
         except tk.TclError:
             return
-
-
-def gap_heading(n):
-    if not n:
-        return "待加工 0"
-    text = f"待加工 {n:,}（缺 AI 判定 / 转写 / 介绍 / 概念，见《导出报告》）"
-    if n > 200:
-        text += " · 只显示最近 200 条"
-    return text
-
-
-def format_gap_rows(gaps):
-    out = []
-    for it in gaps[-200:]:
-        title = str(it.get("标题") or it.get("序号") or "")[:80]
-        reason = it.get("原因") or ""
-        full = (f"{title}\n\n缺什么：{reason}\n作品：{it.get('作品链接') or '—'}\n"
-                f"建议：{it.get('建议') or ''}")
-        out.append((title, reason, full))
-    return out
 
 
 def run():

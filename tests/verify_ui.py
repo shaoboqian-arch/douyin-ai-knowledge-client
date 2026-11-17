@@ -89,13 +89,13 @@ def main():
     check("窗口标题含应用名与版本", APP_NAME in root.title() and VERSION in root.title(), root.title())
     check("窗口宽度 640", root.winfo_width() >= 640, str(root.winfo_width()))
     vis = texts(root)
-    for label in ("导出到", "作品发布日期", "同步整理", "设置"):
+    for label in ("导出到", "作品发布日期", "⚠️ 全仓同步", "仅导出", "设置"):
         check(f"常驻元素存在：{label}", label in vis, str(vis[:12]))
     long_lines = [ln for t in vis for ln in str(t).splitlines() if len(ln) > 42]
     check("没有标语式长文案", not long_lines, str(long_lines[:3]))
     check("初始不展开进度表", not app.panel_visible)
     check("初始无提示块", not app.hint_visible)
-    check("初始按钮为同步整理", app.btn.cget("text") == "同步整理")
+    check("初始按钮为全仓同步", app.btn.cget("text") == "⚠️ 全仓同步")
     check("存在仅导出按钮", app.export_btn.cget("text") == "仅导出")
 
     print("== 进度表渲染 ==")
@@ -175,6 +175,19 @@ def main():
           app.gap_title.cget("text"))
     check("树只插入 200 行", len(app.tree.get_children()) == 200,
           str(len(app.tree.get_children())))
+
+    print("== 日历 ==")
+    dp = ui_kit.DatePicker(app.frm, font=fs)
+    dp.open()
+    root.update()
+    head = dp._body.winfo_children()[0]
+    arrows = [w for w in head.winfo_children() if w.cget("text") in ("‹", "›")]
+    check("日历有两个切换箭头", len(arrows) == 2)
+    check("箭头是纯文字标签（无焦点框）",
+          all(w.winfo_class() == "Label" for w in arrows),
+          str([w.winfo_class() for w in arrows]))
+    check("箭头不参与 Tab", all(str(w.cget("takefocus")) in ("0", "") for w in arrows))
+    dp.close()
 
     print("== 截图 ==")
     out_dir = os.path.join(APP, "验证输出")

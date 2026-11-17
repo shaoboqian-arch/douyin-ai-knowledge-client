@@ -9,6 +9,7 @@ import base64
 import datetime as dt
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -110,9 +111,13 @@ def install(dest, no_shortcut=False, progress=None):
     with open(os.path.join(dest, "说明.md"), "w", encoding="utf-8") as f:
         f.write(
             f"# {APP_NAME} V{VERSION}\n\n"
-            "首次运行点主按钮「初始化本机环境」：选项目目录 → 校验抖音账号并采用 → 确认知识库目录。\n\n"
-            "之后选交付目录与发布时间范围（留空表示全部），点「开始整理」。\n"
-            "每轮新建带时间戳的批次目录，绝不覆盖已有文件；详细结果见批次里的《导出报告.md》。\n\n"
+            "首次运行点主按钮「初始化本机环境」：选项目目录 → 校验抖音账号并采用 → 确认知识库目录"
+            "（没装 Obsidian 可关掉知识库重建）。\n\n"
+            "完成后先点右上角「⚠️ 全仓同步」跑一次全量采集（约 25 分钟）。\n"
+            "之后选导出目录与作品发布日期（留空表示全部），点日期右侧的「仅导出」即可用现有数据出批次，"
+            "不采集、不联网。\n\n"
+            "每轮新建带时间戳的批次目录，绝不覆盖已有文件；计数、子类别分布、待加工、明细与入库结果"
+            "都在批次里的《导出报告.md》。\n\n"
             "MCP：把 mcp配置.json 里 douyin-fav-sync 这一个键合并进 `~/.workbuddy/mcp.json` 已有的 "
             "mcpServers（不要整份覆盖），保存后到连接器管理页点「信任」；接入后调用 dy_status 验证。\n")
 
@@ -187,6 +192,8 @@ class SetupUI:
         self.no_shortcut = no_shortcut
         self.busy = False
         self.full_state = ""
+        self._q = queue.Queue()
+        self._poll_job = None
         root.title(f"安装 {APP_NAME} V{VERSION}")
         root.resizable(False, False)
         root.configure(bg=BG)
@@ -216,6 +223,8 @@ class SetupUI:
         Tooltip(self.state, lambda: self.full_state, font=font_small)
         root.bind("<Return>", lambda _e: self.go())
         root.after_idle(self.dest.reveal_end)
+        root.bind("<Destroy>", self._cancel_poll)
+        self._poll_job = root.after(120, self._poll)
 
     def _on_return(self, _event=None):
         self.go()
@@ -242,10 +251,36 @@ class SetupUI:
         dest = self.dest.get().strip()
 
         def work():
+            # 子线程只投结果，界面全部由主线程轮询取走（tkinter 不保证跨线程 after 安全）
             ok, msg, _d = install(dest, self.no_shortcut)
-            self.root.after(0, lambda: self.done(ok, msg))
+            self._q.put((ok, msg))
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _poll(self):
+        try:
+            while True:
+                ok, msg = self._q.get_nowait()
+                try:
+                    self.done(ok, msg)
+                except tk.TclError:
+                    return
+        except queue.Empty:
+            pass
+        try:
+            if not self.root.winfo_exists():
+                return
+            self._poll_job = self.root.after(120, self._poll)
+        except tk.TclError:
+            return
+
+    def _cancel_poll(self, _e=None):
+        try:
+            if getattr(self, "_poll_job", None):
+                self.root.after_cancel(self._poll_job)
+        except (tk.TclError, ValueError):
+            pass
+        self._poll_job = None
 
     def done(self, ok, msg):
         self.busy = False
