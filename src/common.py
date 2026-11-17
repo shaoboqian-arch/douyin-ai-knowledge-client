@@ -73,3 +73,70 @@ def ensure_vendor():
         sys.path.insert(0, v)
         return True
     return False
+
+
+def clip_text(text, limit):
+    """把多行收成单行；超长时截断并加上省略号。"""
+    text = " ".join(str(text or "").split())
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 0
+    if limit <= 0:
+        return ""
+    if len(text) <= limit:
+        return text
+    if limit == 1:
+        return "…"
+    return text[: limit - 1] + "…"
+
+
+def format_gap_rows(gaps, limit=200, title_width=70, reason_width=40):
+    """待加工表行：返回 (显示标题, 显示原因, 详情全文)，只取最近 limit 条。"""
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 200
+    items = list(gaps or [])[-max(0, limit):]
+    prepared = []
+    for it in items:
+        title = clip_text(str(it.get("标题") or it.get("序号") or ""), 10 ** 9)
+        reason = clip_text(str(it.get("原因") or ""), 10 ** 9)
+        prepared.append((title, reason, it))
+    counts = {}
+    for title, _reason, _it in prepared:
+        counts[title] = counts.get(title, 0) + 1
+    rows = []
+    for title, reason, it in prepared:
+        display = title
+        seq = it.get("序号")
+        if title and counts.get(title, 0) > 1 and seq not in (None, ""):
+            display = f"{title}（{seq}）"
+        full = display if not reason else (display + "\n" + reason)
+        rows.append((clip_text(display, title_width),
+                     clip_text(reason, reason_width), full))
+    return rows
+
+
+def gap_heading(n, shown=200):
+    """待加工表标题。超过 shown 条时写明界面只列最近 shown 条。"""
+    try:
+        n = int(n or 0)
+    except (TypeError, ValueError):
+        n = 0
+    try:
+        shown = int(shown)
+    except (TypeError, ValueError):
+        shown = 200
+    if n > shown:
+        return f"待加工 {n:,}（只显示最近 {shown} 条，全集见批次里的 _待加工.csv）"
+    return f"待加工 {n:,}"
+
+
+def pointer_inside(x, y, width, height):
+    """松开时指针是否仍在按钮矩形内（用于取消拖出后的点击）。"""
+    try:
+        x, y, width, height = float(x), float(y), float(width), float(height)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= x <= width and 0 <= y <= height

@@ -7,7 +7,6 @@ import os
 import sys
 import tempfile
 import time
-import tkinter as tk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(HERE)
@@ -48,6 +47,12 @@ def texts(widget):
 
 
 def main():
+    try:
+        import tkinter as tk
+    except ImportError:
+        print("SKIP  本环境没有 tkinter，未装系统包强跑 GUI（配色断言与控件用例都需要 Tk）")
+        return 0
+
     tmp = tempfile.mkdtemp(prefix="dysync-ui-")
     kb = _fixture.make_kb(tmp)
     project, _rows = _fixture.make_project(tmp)
@@ -130,6 +135,44 @@ def main():
     root.update()
     check("主按钮空格可触发", fired["n"] == 1, str(fired))
     check("状态行在 Tab 序列", int(app.state.cget("takefocus") or 0) == 1)
+
+    print("== 回车、路径与待加工 ==")
+    fired2 = {"n": 0}
+    app.btn.configure(command=lambda: fired2.update(n=fired2["n"] + 1))
+    app.dest.entry.focus_force()
+    root.update()
+    app.dest.entry.event_generate("<Return>")
+    root.update()
+    check("交付目录回车不触发主按钮", fired2["n"] == 0, str(fired2))
+    app.frm.entry.focus_force()
+    root.update()
+    app.frm.entry.event_generate("<Return>")
+    root.update()
+    check("日期框回车不触发主按钮", fired2["n"] == 0, str(fired2))
+    app.btn.focus_force()
+    root.update()
+    app.btn.event_generate("<Return>")
+    root.update()
+    check("主按钮回车可触发", fired2["n"] == 1, str(fired2))
+
+    long_path = os.path.join(tmp, *["pathseg"] * 16)
+    app.dest.delete(0, "end")
+    app.dest.insert(0, long_path)
+    app.dest.reveal_end()
+    root.update()
+    first, last = app.dest.entry.xview()
+    check("路径框可滚到尾部", last >= 0.99 or first > 0 or app.dest.get().endswith("pathseg"),
+          f"xview=({first}, {last})")
+
+    app.gaps = [{"标题": f"条{i}", "原因": "缺介绍", "序号": i} for i in range(1, 202)]
+    app.refresh_table()
+    root.update()
+    check("超过 200 条时标题说明只显示最近 200",
+          "只显示最近 200 条" in app.gap_title.cget("text")
+          and "_待加工.csv" in app.gap_title.cget("text"),
+          app.gap_title.cget("text"))
+    check("树只插入 200 行", len(app.tree.get_children()) == 200,
+          str(len(app.tree.get_children())))
 
     print("== 截图 ==")
     out_dir = os.path.join(APP, "验证输出")

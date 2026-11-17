@@ -14,10 +14,13 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog
 
 from common import APP_NAME, EXE_NAME, VERSION, app_dir, is_frozen
-from ui_kit import BG, BORDER, MUTED, TEXT, Tooltip, apply_icon, center, fonts
+from ui_kit import (
+    BG, CYAN, ERR, MUTED,
+    CapsuleButton, RoundedEntry, Tooltip, apply_icon, apply_theme, center, fonts,
+)
 
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinFavSync"
 
@@ -186,40 +189,49 @@ class SetupUI:
         self.full_state = ""
         root.title(f"安装 {APP_NAME} V{VERSION}")
         root.resizable(False, False)
+        root.configure(bg=BG)
         apply_icon(root)
-        center(root, 600, 196)
-        ttk.Style().configure("Accent.TButton", font=(family, 10, "bold"))
+        apply_theme(root)
+        center(root, 600, 210)
 
-        f = ttk.Frame(root, padding=(20, 16))
+        f = tk.Frame(root, bg=BG, padx=20, pady=16)
         f.pack(fill="both", expand=True)
         f.columnconfigure(1, weight=1)
 
-        ttk.Label(f, text="安装位置", font=font_main).grid(
+        tk.Label(f, text="安装位置", font=font_main, bg=BG, fg=MUTED).grid(
             row=0, column=0, sticky="w", pady=(2, 14))
-        self.dest = ttk.Entry(f, font=font_main)
+        self.dest = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
         self.dest.grid(row=0, column=1, sticky="ew", padx=12, pady=(2, 14))
         self.dest.insert(0, preset or default_dir())
-        ttk.Button(f, text="浏览…", width=9, command=self.pick).grid(
-            row=0, column=2, pady=(2, 14))
+        self.dest.bind("<Return>", self._on_return)
+        CapsuleButton(f, text="浏览…", command=self.pick, width=84, height=36,
+                      font=font_small).grid(row=0, column=2, pady=(2, 14))
 
-        self.btn = ttk.Button(f, text="安装", style="Accent.TButton", command=self.go)
-        self.btn.grid(row=1, column=0, columnspan=3, sticky="ew", ipady=5)
-        self.state = ttk.Label(f, text="", font=font_small, foreground=MUTED,
-                               anchor="w", wraplength=470)
+        self.btn = CapsuleButton(f, text="安装", command=self.go, primary=True,
+                                 height=42, font=(family, 10, "bold"))
+        self.btn.grid(row=1, column=0, columnspan=3, sticky="ew")
+        self.state = tk.Label(f, text="", font=font_small, bg=BG, fg=MUTED,
+                              anchor="w", wraplength=470, justify="left")
         self.state.grid(row=2, column=0, columnspan=3, sticky="w", pady=(14, 0))
         Tooltip(self.state, lambda: self.full_state, font=font_small)
         root.bind("<Return>", lambda _e: self.go())
+        root.after_idle(self.dest.reveal_end)
+
+    def _on_return(self, _event=None):
+        self.go()
+        return "break"
 
     def set_state(self, text, color=MUTED):
         self.full_state = text
         self.state.configure(text=text if len(text) <= 76 else text[:73] + "…",
-                             foreground=color)
+                             fg=color)
 
     def pick(self):
         d = filedialog.askdirectory(title="选择安装位置")
         if d:
             self.dest.delete(0, "end")
             self.dest.insert(0, os.path.normpath(d))
+            self.dest.reveal_end()
 
     def go(self):
         if self.busy:
@@ -237,19 +249,13 @@ class SetupUI:
 
     def done(self, ok, msg):
         self.busy = False
-        self.set_state(msg, "#25f4ee" if ok else "#ff7a7a")
+        self.set_state(msg, CYAN if ok else ERR)
         self.btn.configure(text="完成", state="normal", command=self.root.destroy)
 
 
 def run(preset=None, no_shortcut=False):
     root = tk.Tk()
-    root.configure(bg=BG)
-    try:
-        ttk.Style().theme_use("vista")
-        ttk.Style().configure("TFrame", background=BG)
-        ttk.Style().configure("TLabel", background=BG, foreground=TEXT)
-    except tk.TclError:
-        pass
+    apply_theme(root)
     fm, fs, family = fonts(root)
     SetupUI(root, fm, fs, family, preset, no_shortcut)
     root.mainloop()

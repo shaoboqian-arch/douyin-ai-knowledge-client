@@ -529,7 +529,7 @@ def export_only(dest, frm="", to="", on_event=None, on_progress=None, project_di
 
 
 # ---------------------------------------------------------------- 续跑
-def retry(batch_path, on_event=None, on_progress=None):
+def retry(batch_path, on_event=None, on_progress=None, cancel=None):
     """对已采集成功的批次，重跑重建 + 导出，写成**新的一批**（不重新采集）。
 
     · 不原地改写旧批次：旧批次保留为证据，新批次名带 `-r2`、`-r3`，绝不覆盖。
@@ -570,7 +570,12 @@ def retry(batch_path, on_event=None, on_progress=None):
     def fail(message):
         new_state.update(stage="rebuild", ok=False, error=message, finished_at=_now())
         _write_state(batch, new_state)
-        return {"ok": False, "error": message, "batch_path": batch, "stage": "rebuild"}
+        return {"ok": False, "error": message, "batch_path": batch,
+                "stage": "rebuild", "state": new_state}
+
+    def stopped():
+        _emit(on_event, {"type": "phase", "name": "done"})
+        return fail("已停止本轮整理；已采集的原始数据保留在项目里，未生成交付。")
 
     _emit(on_event, {"type": "phase", "name": "rebuild"})
     kb_enabled = bool(cfg.get("kb_enabled", True))
@@ -583,11 +588,16 @@ def retry(batch_path, on_event=None, on_progress=None):
         _emit(on_event, {"type": "stage", "name": "notes", "state": "skip"})
         _emit(on_event, {"type": "stage", "name": "audit", "state": "skip"})
     for key, script, label in steps:
+        if cancel is not None and cancel.is_set():
+            return stopped()
         _say(on_progress, label)
         _emit(on_event, {"type": "stage", "name": key, "state": "start"})
         log = os.path.join(logs, f"{key}.log")
-        rr = pipeline.run_script(python, os.path.join(project, script), [], project, log)
+        rr = pipeline.run_script(python, os.path.join(project, script), [], project,
+                                 log, cancel=cancel)
         new_state["logs"][key] = log
+        if rr.get("cancelled"):
+            return stopped()
         if key == "audit":
             audit_rc, audit_lines = rr["code"], rr.get("lines") or []
         if rr["code"] != 0:
@@ -595,6 +605,8 @@ def retry(batch_path, on_event=None, on_progress=None):
             tail = " / ".join((rr.get("lines") or [])[-3:])
             return fail(f"{script} 失败（exit {rr['code']}）：{tail}")
         _emit(on_event, {"type": "stage", "name": key, "state": "done"})
+    if cancel is not None and cancel.is_set():
+        return stopped()
 
     _emit(on_event, {"type": "phase", "name": "export"})
     _say(on_progress, "写出本批交付…")

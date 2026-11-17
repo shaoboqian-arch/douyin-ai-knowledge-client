@@ -35,7 +35,7 @@ class Setup:
         root.configure(bg=BG)
         apply_icon(root)
         apply_theme(root)
-        center(root, 680, 396)
+        center(root, 680, 424)
 
         f = tk.Frame(root, bg=BG, padx=20, pady=16)
         f.pack(fill="both", expand=True)
@@ -43,7 +43,7 @@ class Setup:
 
         tk.Label(f, text="项目目录", font=font_main, bg=BG, fg=MUTED).grid(
             row=0, column=0, sticky="w", pady=(0, 10))
-        self.project = RoundedEntry(f, font=font_main)
+        self.project = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
         self.project.grid(row=0, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
         self.project.insert(0, self.cfg.get("project_dir", ""))
         CapsuleButton(f, text="自动发现", command=self.autodetect, width=78, height=36,
@@ -56,24 +56,28 @@ class Setup:
         self.account = RoundedEntry(f, font=font_main)
         self.account.grid(row=1, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
         self.account.insert(0, self.cfg.get("expect_nickname", ""))
+        self.account.set_readonly(True)
         self.verify_btn = CapsuleButton(f, text="校验账号", command=self.probe, width=78,
                                         height=36, font=font_small)
         self.verify_btn.grid(row=1, column=2, padx=(0, 6), pady=(0, 10))
         CapsuleButton(f, text="采用", command=self.adopt, width=64, height=36,
                       font=font_small).grid(row=1, column=3, pady=(0, 10))
+        tk.Label(f, text="请先校验账号，再点采用", font=font_small, bg=BG, fg=MUTED,
+                 anchor="w").grid(row=2, column=1, columnspan=3, sticky="w",
+                                  padx=(12, 0), pady=(0, 8))
 
         tk.Label(f, text="知识库", font=font_main, bg=BG, fg=MUTED).grid(
-            row=2, column=0, sticky="w", pady=(0, 14))
-        self.kb = RoundedEntry(f, font=font_main)
-        self.kb.grid(row=2, column=1, sticky="ew", padx=(12, 8), pady=(0, 14))
+            row=3, column=0, sticky="w", pady=(0, 14))
+        self.kb = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
+        self.kb.grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=(0, 14))
         self.kb.insert(0, self.cfg.get("kb_dir", ""))
         CapsuleButton(f, text="浏览…", command=self.pick_kb, width=64, height=36,
-                      font=font_small).grid(row=2, column=2, columnspan=2, pady=(0, 14))
+                      font=font_small).grid(row=3, column=2, columnspan=2, pady=(0, 14))
 
         obs = detect.obsidian_info(self.cfg.get("obsidian_exe", ""))
         self.obsidian = obs
         kb_row = tk.Frame(f, bg=BG)
-        kb_row.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        kb_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(0, 10))
         self.kb_switch = ToggleSwitch(kb_row,
                                       value=bool(self.cfg.get("kb_enabled", True)) and obs["installed"])
         self.kb_switch.set_enabled(obs["installed"])
@@ -88,15 +92,17 @@ class Setup:
 
         self.state = tk.Label(f, text="", font=font_small, bg=BG, fg=MUTED,
                               anchor="w", wraplength=620, justify="left")
-        self.state.grid(row=4, column=0, columnspan=4, sticky="ew")
+        self.state.grid(row=5, column=0, columnspan=4, sticky="ew")
         self.done_btn = CapsuleButton(f, text="完成", command=self.commit, primary=True,
                                       height=40, font=(family, 10, "bold"))
-        self.done_btn.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        self.done_btn.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(14, 0))
         root.bind("<Return>", lambda _e: self.commit())
 
         if self.cfg.get("project_dir"):
             self.after_project(quiet=True)
         self.refresh()
+        self.root.after_idle(self.project.reveal_end)
+        self.root.after_idle(self.kb.reveal_end)
 
     # ---------------------------------------------------------------- 动作
     def set_state(self, text, color=MUTED):
@@ -109,13 +115,15 @@ class Setup:
             return
         self.project.delete(0, "end")
         self.project.insert(0, cands[0])
+        self.project.reveal_end()
         self.after_project()
 
     def pick_project(self):
-        d = filedialog.askdirectory(title="选择 TikTokDownloader 项目目录")
+        d = filedialog.askdirectory(title="选择采集项目目录（需含 extract_favorites.py）")
         if d:
             self.project.delete(0, "end")
             self.project.insert(0, os.path.normpath(d))
+            self.project.reveal_end()
             self.after_project()
 
     def pick_kb(self):
@@ -123,6 +131,7 @@ class Setup:
         if d:
             self.kb.delete(0, "end")
             self.kb.insert(0, os.path.normpath(d))
+            self.kb.reveal_end()
             self.refresh()
 
     def after_project(self, quiet=False):
@@ -137,6 +146,7 @@ class Setup:
         if kb:
             self.kb.delete(0, "end")
             self.kb.insert(0, kb)
+            self.kb.reveal_end()
         cookie = detect.read_project_settings(project)
         msg = f"已找到项目 · 解释器 {'就绪' if py else '缺失'}"
         msg += " · Cookie 已存在" if cookie.get("has_cookie") else " · Cookie 缺失，请先在项目里扫码登录"
@@ -170,8 +180,7 @@ class Setup:
         acct = info.get("account") or {}
         if r["code"] == 0 and acct.get("sec_uid"):
             self.probed = acct
-            self.account.delete(0, "end")
-            self.account.insert(0, acct.get("nickname") or acct["sec_uid"])
+            self.account.set(acct.get("nickname") or acct["sec_uid"])
             self.set_state(f"校验通过：{acct.get('nickname')} · {acct['sec_uid'][:10]}…"
                            "（点「采用」写入设置）", CYAN)
             return
@@ -184,8 +193,7 @@ class Setup:
             return
         self.cfg["expect_sec_uid"] = self.probed["sec_uid"]
         self.cfg["expect_nickname"] = self.probed.get("nickname", "")
-        self.account.delete(0, "end")
-        self.account.insert(0, self.probed.get("nickname") or self.probed["sec_uid"])
+        self.account.set(self.probed.get("nickname") or self.probed["sec_uid"])
         self.set_state("已记录这个账号；以后采集到别的账号会自动中止，不重建交付物。", CYAN)
 
     def refresh_obsidian(self):

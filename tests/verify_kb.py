@@ -165,36 +165,46 @@ def main():
         check("md 表头齐全", "| 环节 | 结果 |" in md and "身份校验" in md)
         check("md 用状态图标", "✅" in md)
         check("报告能从批次读回", (kbreport.load(r2["batch_path"]) or {}).get("rows"))
+        broken = kbreport.render_md({
+            "rows": [{"环节": "换行", "状态": "ok", "结果": "第一行\n第二行 | x"}]})
+        table = [ln for ln in broken.splitlines() if ln.startswith("| 换行")]
+        check("结果换行不拆 md 表格", len(table) == 1 and "第一行 第二行" in table[0],
+              str(table[:1]))
 
         print("== 状态机 ==")
         check("已完成批次拒绝续跑", engine.retry(r2["batch_path"]).get("ok") is False)
 
         print("== 报告窗口 ==")
-        import tkinter as tk
-        import time
-        import report_ui
-        from ui_kit import fonts
-        root = tk.Tk()
-        fm, fs, _fam = fonts(root)
-        win = report_ui.ReportWindow(root, rep, kb, fm, fs)
-        root.lift()
-        root.attributes("-topmost", True)
-        root.update()
-        time.sleep(0.6)
-        check("报告窗口可打开", root.winfo_exists() == 1)
-        shot = os.path.join(APP, "验证输出", "入库报告-本轮.png")
-        os.makedirs(os.path.dirname(shot), exist_ok=True)
         try:
-            from PIL import ImageGrab
-            x, y = root.winfo_rootx(), root.winfo_rooty()
-            ImageGrab.grab(bbox=(x, y, x + root.winfo_width(),
-                                 y + root.winfo_height())).save(shot)
-            check("报告窗口截图已保存",
-                  os.path.isfile(shot) and os.path.getsize(shot) > 8000,
-                  f"{os.path.getsize(shot) if os.path.isfile(shot) else 0} B")
-        except Exception as e:
-            check("报告窗口截图已保存", False, str(e))
-        root.destroy()
+            import tkinter as tk
+        except ImportError:
+            print("  SKIP  报告窗口（本环境没有 tkinter，未装系统包强跑 GUI）")
+            tk = None
+        if tk is not None:
+            import time
+            import report_ui
+            from ui_kit import fonts
+            root = tk.Tk()
+            fm, fs, _fam = fonts(root)
+            win = report_ui.ReportWindow(root, rep, kb, fm, fs)
+            root.lift()
+            root.attributes("-topmost", True)
+            root.update()
+            time.sleep(0.6)
+            check("报告窗口可打开", root.winfo_exists() == 1)
+            shot = os.path.join(APP, "验证输出", "入库报告-本轮.png")
+            os.makedirs(os.path.dirname(shot), exist_ok=True)
+            try:
+                from PIL import ImageGrab
+                x, y = root.winfo_rootx(), root.winfo_rooty()
+                ImageGrab.grab(bbox=(x, y, x + root.winfo_width(),
+                                     y + root.winfo_height())).save(shot)
+                check("报告窗口截图已保存",
+                      os.path.isfile(shot) and os.path.getsize(shot) > 8000,
+                      f"{os.path.getsize(shot) if os.path.isfile(shot) else 0} B")
+            except Exception as e:
+                check("报告窗口截图已保存", False, str(e))
+            root.destroy()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -30,6 +30,7 @@ def steps():
         ("知识库与报告", [PY, os.path.join(HERE, "verify_kb.py")]),
         ("清单复核", [PY, os.path.join(HERE, "verify_manifest.py")]),
         ("界面", [PY, os.path.join(HERE, "verify_ui.py"), ROUND]),
+        ("界面改动", [PY, os.path.join(HERE, "verify_ui_fix.py")]),
         ("MCP 全链路", [PY, os.path.join(HERE, "verify_mcp.py")] + exe),
         ("MCP 兼容", [PY, os.path.join(HERE, "verify_mcp_compat.py")] + exe),
         ("设置页", [PY, os.path.join(HERE, "verify_settings.py"), ROUND]),

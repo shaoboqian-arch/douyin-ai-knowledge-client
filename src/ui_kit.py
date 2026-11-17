@@ -13,6 +13,8 @@ import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import ttk
 
+from common import pointer_inside
+
 BG = "#0e1014"
 PANEL = "#151922"
 SURFACE = "#1c2130"
@@ -103,11 +105,14 @@ def apply_theme(root):
         style.configure("TEntry", fieldbackground=SURFACE, foreground=TEXT,
                         insertcolor=TEXT, bordercolor=BORDER)
         style.configure("Treeview", background=SURFACE, fieldbackground=SURFACE,
-                        foreground=TEXT, bordercolor=BORDER, rowheight=22)
+                        foreground=TEXT, bordercolor=BORDER, rowheight=28)
         style.map("Treeview", background=[("selected", ACCENT)],
                   foreground=[("selected", ON_ACCENT)])
         style.configure("Treeview.Heading", background=PANEL, foreground=MUTED,
-                        bordercolor=BORDER, relief="flat")
+                        bordercolor=BORDER, relief="flat", padding=(8, 6))
+        style.map("Treeview.Heading",
+                  background=[("active", SURFACE)],
+                  foreground=[("active", TEXT)])
         for name in ("TScrollbar", "Vertical.TScrollbar", "Horizontal.TScrollbar"):
             style.configure(name, background=PANEL, troughcolor=BG, bordercolor=BG,
                             arrowcolor=MUTED, darkcolor=PANEL, lightcolor=PANEL,
@@ -286,18 +291,28 @@ class CapsuleButton(tk.Canvas):
             self._hover = False
             self._draw()
 
-    def _on_release(self, _e=None):
-        self._hover = True
+    def _on_release(self, event=None):
+        w = int(self.winfo_width() or self._box_w)
+        h = int(self.winfo_height() or self._box_h)
+        inside = bool(event is not None and pointer_inside(event.x, event.y, w, h))
+        self._hover = inside
         self._draw()
-        if self._state != "disabled" and self._command:
+        if inside and self._state != "disabled" and self._command:
             self._command()
 
 
 class RoundedEntry(tk.Frame):
-    """圆角输入框，对外代理 get / insert / delete / bind。"""
+    """圆角输入框，对外代理 get / insert / delete / bind。
 
-    def __init__(self, master, font=None, width=20, pxwidth=None, placeholder="", **kw):
+    path=True 时：失焦把视野停在路径尾部，并用 tooltip 给出完整路径。
+    回车默认截在输入框内，不冒泡到窗口级绑定。
+    """
+
+    def __init__(self, master, font=None, width=20, pxwidth=None, placeholder="",
+                 path=False, path_font=None, **kw):
         self._placeholder = placeholder
+        self._path_mode = False
+        self._right_inset = 14
         super().__init__(master, bg=BG, highlightthickness=0)
         self._height = 36
         if pxwidth:
@@ -327,18 +342,55 @@ class RoundedEntry(tk.Frame):
         self.entry.bind("<FocusIn>", lambda _e: self._on_focus(True))
         self.entry.bind("<FocusOut>", lambda _e: self._on_focus(False))
         self.entry.bind("<KeyRelease>", lambda _e: self._sync_placeholder())
+        self.entry.bind("<Return>", lambda _e: "break")
+        self.entry.bind("<KP_Enter>", lambda _e: "break")
         self._focus = False
-        self.bind("<Configure>", self._on_resize)
+        tk.Frame.bind(self, "<Configure>", self._on_resize, add="+")
+        if path:
+            self.enable_path_view(path_font)
+
+    def set_right_inset(self, px):
+        try:
+            self._right_inset = max(14, int(px))
+        except (TypeError, ValueError):
+            self._right_inset = 14
+        self._on_resize()
+
+    def enable_path_view(self, font=None):
+        if self._path_mode:
+            return
+        self._path_mode = True
+        Tooltip(self.entry, self.get, font=font or ("Microsoft YaHei UI", 9))
+        self.entry.bind("<FocusOut>", lambda _e: self.reveal_end(), add="+")
+        try:
+            self.after_idle(self.reveal_end)
+        except tk.TclError:
+            pass
+
+    def reveal_end(self, _event=None):
+        try:
+            self.entry.xview_moveto(1)
+        except tk.TclError:
+            pass
 
     def _on_resize(self, _event=None):
         w = max(self._min_w, int(self.winfo_width() or self._min_w))
-        self.entry.place_configure(x=14, y=5, width=max(20, w - 28), height=26)
+        inner = max(20, w - 14 - self._right_inset)
+        self.entry.place_configure(x=14, y=5, width=inner, height=26)
         self._sync_placeholder()
         self._draw()
+        if self._path_mode:
+            try:
+                if self.entry.focus_get() is not self.entry:
+                    self.reveal_end()
+            except tk.TclError:
+                self.reveal_end()
 
     def _on_focus(self, focus):
         self._draw(focus=focus)
         self._sync_placeholder()
+        if not focus and self._path_mode:
+            self.reveal_end()
 
     def _sync_placeholder(self):
         if not self._placeholder:
@@ -370,6 +422,12 @@ class RoundedEntry(tk.Frame):
     def insert(self, index, text):
         out = self.entry.insert(index, text)
         self._sync_placeholder()
+        if self._path_mode:
+            try:
+                if self.entry.focus_get() is not self.entry:
+                    self.reveal_end()
+            except tk.TclError:
+                self.reveal_end()
         return out
 
     def delete(self, first, last=None):
@@ -377,12 +435,25 @@ class RoundedEntry(tk.Frame):
         self._sync_placeholder()
         return out
 
+    def set(self, text):
+        """写入文本；只读框会临时解开再锁上。"""
+        state = str(self.entry.cget("state") or "normal")
+        if state != "normal":
+            self.entry.configure(state="normal")
+        self.delete(0, "end")
+        self.insert(0, text or "")
+        if state != "normal":
+            self.entry.configure(state=state)
+
+    def set_readonly(self, readonly=True):
+        self.entry.configure(state="readonly" if readonly else "normal")
+
     def bind(self, seq, func, add=None):
         return self.entry.bind(seq, func, add)
 
 
 class ToggleSwitch(tk.Canvas):
-    """带轨道的开关：开=品牌红，关=深灰。支持键盘空格/回车。"""
+    """带轨道的开关：开=品牌红，关=深灰。支持键盘空格/回车，聚焦时画青色焦点环。"""
 
     def __init__(self, master, value=False, command=None, width=48, height=26, **kw):
         super().__init__(master, width=width, height=height, highlightthickness=0,
@@ -390,10 +461,21 @@ class ToggleSwitch(tk.Canvas):
         self._value = bool(value)
         self._command = command
         self._enabled = True
+        self._focus = False
         self.bind("<Button-1>", self._toggle)
         self.bind("<space>", self._toggle)
         self.bind("<Return>", self._toggle)
+        self.bind("<FocusIn>", self._on_focus_in)
+        self.bind("<FocusOut>", self._on_focus_out)
         self.bind("<Configure>", lambda _e: self._draw())
+        self._draw()
+
+    def _on_focus_in(self, _e=None):
+        self._focus = True
+        self._draw()
+
+    def _on_focus_out(self, _e=None):
+        self._focus = False
         self._draw()
 
     def get(self):
@@ -431,6 +513,9 @@ class ToggleSwitch(tk.Canvas):
         cx = (w - knob - 4) if self._value else 4
         self.create_oval(cx, 4, cx + knob, 4 + knob, fill=TEXT if self._enabled else MUTED,
                          outline="")
+        if self._focus and self._enabled:
+            _round_rect(self, 3, 3, w - 3, h - 3, max(2, r - 2),
+                        fill="", outline=CYAN, width=2)
 
 
 class PhaseBadge(tk.Canvas):
@@ -542,12 +627,28 @@ class ProgressBar(tk.Canvas):
 
 
 class DatePicker:
-    """日历弹层，选中后把 YYYY-MM-DD 写回输入框；Esc 只关日历。"""
+    """日历弹层，选中后把 YYYY-MM-DD 写回输入框；Esc 只关日历。
 
-    def __init__(self, entry, font=None):
+    embedded=True 时把「▾」收进圆角输入框尾部，不再单独占一列。
+    """
+
+    def __init__(self, entry, font=None, embedded=False):
         self.entry = entry
         self.font = font or ("Microsoft YaHei UI", 9)
         self.win = None
+        self._trigger = None
+        if embedded:
+            self._embed()
+
+    def _embed(self):
+        host = self.entry
+        if not isinstance(host, RoundedEntry):
+            return
+        host.set_right_inset(36)
+        self._trigger = CapsuleButton(
+            host, text="▾", command=self.toggle, width=26, height=26,
+            font=self.font, bg=SURFACE)
+        self._trigger.place(relx=1, x=-31, y=5, width=26, height=26)
 
     def toggle(self, _event=None):
         if self.win is not None:
@@ -605,14 +706,12 @@ class DatePicker:
             w.destroy()
         head = tk.Frame(self._body, bg=PANEL)
         head.pack(fill="x")
-        tk.Button(head, text="‹", bd=0, bg=PANEL, fg=TEXT, font=self.font,
-                  activebackground=SURFACE, activeforeground=TEXT,
-                  command=lambda: self._shift(-1), cursor="hand2").pack(side="left")
+        CapsuleButton(head, text="‹", command=lambda: self._shift(-1),
+                      width=28, height=24, font=self.font, bg=PANEL).pack(side="left")
         tk.Label(head, text=f"{self._year}-{self._month:02d}", bg=PANEL, fg=TEXT,
                  font=self.font).pack(side="left", expand=True)
-        tk.Button(head, text="›", bd=0, bg=PANEL, fg=TEXT, font=self.font,
-                  activebackground=SURFACE, activeforeground=TEXT,
-                  command=lambda: self._shift(1), cursor="hand2").pack(side="right")
+        CapsuleButton(head, text="›", command=lambda: self._shift(1),
+                      width=28, height=24, font=self.font, bg=PANEL).pack(side="right")
         grid = tk.Frame(self._body, bg=PANEL)
         grid.pack(pady=(6, 0))
         for i, name in enumerate("一二三四五六日"):
@@ -634,6 +733,10 @@ class DatePicker:
                                width=3, cursor="hand2")
                 btn.grid(row=r, column=c, padx=1, pady=1)
                 btn.bind("<Button-1>", lambda _e, dd=d: self._pick(dd))
+        foot = tk.Frame(self._body, bg=PANEL)
+        foot.pack(fill="x", pady=(8, 0))
+        CapsuleButton(foot, text="清除 / 回到不限", command=self._clear,
+                      width=168, height=26, font=self.font, bg=PANEL).pack()
 
     def _shift(self, delta):
         m = self._month + delta
@@ -651,6 +754,13 @@ class DatePicker:
         try:
             self.entry.delete(0, "end")
             self.entry.insert(0, day.isoformat())
+        except tk.TclError:
+            pass
+        self.close()
+
+    def _clear(self):
+        try:
+            self.entry.delete(0, "end")
         except tk.TclError:
             pass
         self.close()

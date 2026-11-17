@@ -9,7 +9,6 @@ import shutil
 import sys
 import tempfile
 import time
-import tkinter as tk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(HERE)
@@ -91,6 +90,15 @@ def main():
     check("dy_status ready", tr.get("ready") is True, str(tr.get("message")))
 
     print("== 设置窗口 ==")
+    try:
+        import tkinter as tk
+    except ImportError:
+        print("  SKIP  设置窗口（本环境没有 tkinter，未装系统包强跑 GUI）")
+        shutil.rmtree(tmp, ignore_errors=True)
+        print(f"\n== 汇总 {PASS} PASS / {len(FAILS)} FAIL ==")
+        for name, detail in FAILS:
+            print(f"  FAIL  {name}  {detail}")
+        return 1 if FAILS else 0
     import settings as settings_ui
     from ui_kit import fonts
     root = tk.Tk()

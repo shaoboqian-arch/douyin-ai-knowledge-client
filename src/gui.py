@@ -17,7 +17,10 @@ import config
 import engine
 import settings as settings_ui
 import setup_env
-from common import APP_NAME, PHASES, VERSION, app_dir, is_frozen, prefs_path
+from common import (
+    APP_NAME, PHASES, VERSION, app_dir, format_gap_rows, gap_heading,
+    is_frozen, prefs_path,
+)
 from ui_kit import (
     ACCENT, BG, BORDER, CYAN, DONE_BG, ERR, ERR_BG, MUTED, ON_ACCENT, PANEL,
     SURFACE, TEXT, WARN,
@@ -99,7 +102,7 @@ class App:
 
         tk.Label(f, text="交付到", font=font_main, bg=BG, fg=MUTED).grid(
             row=0, column=0, sticky="w", pady=(2, 12))
-        self.dest = RoundedEntry(f, font=font_main)
+        self.dest = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
         self.dest.grid(row=0, column=1, sticky="ew", pady=(2, 12), padx=(12, 8))
         CapsuleButton(f, text="浏览…", command=self.pick, width=84, height=36,
                       font=font_small).grid(row=0, column=2, pady=(2, 12))
@@ -109,18 +112,14 @@ class App:
         rng = tk.Frame(f, bg=BG)
         rng.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(12, 0), pady=(0, 18))
         rng.columnconfigure(0, weight=1)
-        rng.columnconfigure(3, weight=1)
+        rng.columnconfigure(2, weight=1)
         self.frm = RoundedEntry(rng, font=font_main, width=10, pxwidth=160, placeholder="不限")
         self.to = RoundedEntry(rng, font=font_main, width=10, pxwidth=160, placeholder="不限")
         self.frm.grid(row=0, column=0, sticky="ew")
-        self._cal_from = DatePicker(self.frm, font=font_small)
-        CapsuleButton(rng, text="▾", command=self._cal_from.toggle, width=28, height=36,
-                      font=font_small).grid(row=0, column=1, padx=(4, 0))
-        tk.Label(rng, text="  —  ", font=font_main, bg=BG, fg=MUTED).grid(row=0, column=2)
-        self.to.grid(row=0, column=3, sticky="ew")
-        self._cal_to = DatePicker(self.to, font=font_small)
-        CapsuleButton(rng, text="▾", command=self._cal_to.toggle, width=28, height=36,
-                      font=font_small).grid(row=0, column=4, padx=(4, 0))
+        self._cal_from = DatePicker(self.frm, font=font_small, embedded=True)
+        tk.Label(rng, text="  —  ", font=font_main, bg=BG, fg=MUTED).grid(row=0, column=1)
+        self.to.grid(row=0, column=2, sticky="ew")
+        self._cal_to = DatePicker(self.to, font=font_small, embedded=True)
 
         self.btn = CapsuleButton(f, text="开始整理", command=self.primary_action, primary=True,
                                  height=42, font=(family, 11, "bold"))
@@ -172,13 +171,14 @@ class App:
         self.frm.insert(0, cfg.get("frm") or "")
         self.to.insert(0, cfg.get("to") or "")
 
-        root.bind("<Return>", lambda _e: self.primary_action())
+        root.bind("<Return>", self._on_root_return)
         root.bind("<Escape>", lambda _e: self.close())
         root.bind("<Configure>", self._on_configure)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._after_id = root.after(60, self.poll)
         threading.Thread(target=self.env_check, daemon=True).start()
         self.root.after(120, lambda: self._restore_last(prefs))
+        self.root.after_idle(self.dest.reveal_end)
 
     # ---------------------------------------------------------------- 进度表
     def _build_panel(self, parent):
@@ -215,7 +215,8 @@ class App:
                 self.cell[(g, key)] = v
 
         self.gap_title = tk.Label(p, text="待加工 0", font=self.font_small,
-                                  fg=MUTED, bg=BG, anchor="w")
+                                  fg=MUTED, bg=BG, anchor="w", justify="left",
+                                  wraplength=560)
         self.gap_title.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 4))
         self.tree = ttk.Treeview(p, columns=("name", "reason"), show="headings", height=4)
         self.tree.heading("name", text="条目")
@@ -226,6 +227,10 @@ class App:
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.grid(row=3, column=0, sticky="nsew")
         sb.grid(row=3, column=1, sticky="ns")
+        self._gap_full = {}
+        self.tree.bind("<ButtonRelease-1>", self._open_gap)
+        self.tree.bind("<Return>", self._open_gap)
+        self.tree.bind("<Double-1>", self._open_gap)
 
         self.hint = tk.Frame(p, bg=ERR_BG, padx=10, pady=8)
         self.hint.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
@@ -260,6 +265,8 @@ class App:
             self.state.configure(wraplength=state_w)
         if int(self.hint_label.cget("wraplength") or 0) != hint_w:
             self.hint_label.configure(wraplength=hint_w)
+        if int(self.gap_title.cget("wraplength") or 0) != hint_w:
+            self.gap_title.configure(wraplength=hint_w)
 
     def show_panel(self):
         self.panel_visible = True
@@ -281,14 +288,22 @@ class App:
 
     def refresh_table(self):
         for (g, key), lbl in self.cell.items():
-            lbl.configure(text=str(self.stats[g][key]))
+            lbl.configure(text=f"{self.stats[g][key]:,}")
         n = len(self.gaps)
-        self.gap_title.configure(text=f"待加工 {n}", fg=ERR if n else MUTED)
+        self.gap_title.configure(text=gap_heading(n), fg=ERR if n else MUTED)
         self.tree.delete(*self.tree.get_children())
-        for it in self.gaps[-200:]:
-            self.tree.insert("", "end", values=(
-                str(it.get("标题") or it.get("序号") or "")[:70], it.get("原因") or ""))
+        self._gap_full = {}
+        for title, reason, full in format_gap_rows(self.gaps):
+            iid = self.tree.insert("", "end", values=(title, reason))
+            self._gap_full[iid] = full
         self.dirty = False
+
+    def _open_gap(self, _e=None):
+        sel = self.tree.selection()
+        if not sel:
+            return "break"
+        text = (self._gap_full or {}).get(sel[0], "")
+        return self.show_full(text)
 
     def handle_event(self, e):
         typ = e.get("type")
@@ -326,6 +341,11 @@ class App:
 
     def refresh_env(self):
         threading.Thread(target=self.env_check, daemon=True).start()
+
+    def _on_root_return(self, event):
+        if event.widget is self.btn:
+            self.primary_action()
+        return "break"
 
     def primary_action(self):
         if self.busy:
@@ -371,6 +391,7 @@ class App:
         if d:
             self.dest.delete(0, "end")
             self.dest.insert(0, os.path.normpath(d))
+            self.dest.reveal_end()
 
     def set_state(self, text, color=MUTED):
         self.full_state = text
@@ -397,8 +418,8 @@ class App:
         if self.last_batch and os.path.isdir(self.last_batch):
             try:
                 os.startfile(self.last_batch)
-            except OSError:
-                pass
+            except OSError as e:
+                self.set_state(f"无法打开交付目录：{e}", ERR)
 
     def open_report(self):
         if not self.report and self.last_batch:
@@ -485,6 +506,7 @@ class App:
         if self.busy or not self.last_batch:
             return
         self.busy = True
+        self.cancel.clear()
         self.stats = _blank_stats()
         self.gaps = []
         self.dirty = True
@@ -501,7 +523,8 @@ class App:
             r = engine.safe_call(
                 engine.retry, batch,
                 on_event=lambda e: self.q.put(("event", e)),
-                on_progress=lambda m: self.q.put(("progress", m)))
+                on_progress=lambda m: self.q.put(("progress", m)),
+                cancel=self.cancel)
             self.q.put(("retry_done", r))
 
         threading.Thread(target=work, daemon=True).start()
@@ -532,8 +555,8 @@ class App:
             new = int(payload.get("new_count") or 0)
             gaps = int(payload.get("gap_count") or 0)
             head = "续跑完成" if retried else "完成"
-            self.set_state(f"{head} · {total} 条 · 新增 {new} · 待加工 {gaps}", CYAN)
-            self._show_hint(f"待加工 {gaps} 条：明细见 _待加工.csv；补齐后重新整理。" if gaps else "")
+            self.set_state(f"{head} · {total:,} 条 · 新增 {new:,} · 待加工 {gaps:,}", CYAN)
+            self._show_hint(f"待加工 {gaps:,} 条：明细见 _待加工.csv；补齐后重新整理。" if gaps else "")
         else:
             err = payload.get("error") or "整理失败"
             self.set_state(err, ERR)

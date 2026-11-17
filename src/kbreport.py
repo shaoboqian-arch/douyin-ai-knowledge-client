@@ -272,7 +272,7 @@ def render_md(report):
     ]
     for r in report.get("rows") or []:
         icon = {"ok": "✅", "warn": "⚠️", "skip": "➖"}.get(r.get("状态"), "")
-        text = str(r.get("结果") or "").replace("|", "\\|")
+        text = " ".join(str(r.get("结果") or "").split()).replace("|", "\\|")
         lines.append(f"| {r.get('环节')} | {icon} {text} |")
     lines += ["", "> ✅ 通过 ｜ ⚠️ 需处理 ｜ ➖ 本轮跳过", ""]
     return "\n".join(lines)

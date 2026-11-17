@@ -6,6 +6,7 @@
 import os
 import threading
 import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
 
 import config
 import detect
@@ -38,11 +39,11 @@ class Settings:
         f.pack(fill="both", expand=True)
         f.columnconfigure(1, weight=1)
 
-        self.project = self._row(f, 0, "项目目录")
+        self.project = self._row(f, 0, "项目目录", path=True)
         self._btn(f, 0, "自动发现", self.autodetect, width=78)
         self._btn(f, 0, "浏览…", self.pick_project, width=64, padx=(6, 0))
 
-        self.kb = self._row(f, 1, "知识库")
+        self.kb = self._row(f, 1, "知识库", path=True)
         self._btn(f, 1, "浏览…", self.pick_kb, width=64, padx=(6, 0))
 
         self.account = self._row(f, 2, "账号")
@@ -56,7 +57,7 @@ class Settings:
         self.obsidian = obs
         kb_row = tk.Frame(f, bg=BG)
         kb_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(2, 6))
-        kb_row.columnconfigure(2, weight=1)
+        kb_row.columnconfigure(1, weight=1)
         self.kb_switch = ToggleSwitch(
             kb_row, value=bool(self.cfg.get("kb_enabled", True)) and obs["installed"],
             command=lambda _v: self.refresh_obsidian())
@@ -64,11 +65,11 @@ class Settings:
         self.kb_switch.grid(row=0, column=0, sticky="w")
         tk.Label(kb_row, text="整理后重建 Obsidian 知识库", font=self.font_main,
                  bg=BG, fg=TEXT).grid(row=0, column=1, sticky="w", padx=(10, 12))
-        self.obs_state = tk.Label(kb_row, text="", font=self.font_small, bg=BG,
-                                  fg=MUTED, anchor="w", justify="left", wraplength=300)
-        self.obs_state.grid(row=0, column=2, sticky="ew")
         CapsuleButton(kb_row, text="打开知识库", command=self.open_kb, width=96,
-                      height=30, font=self.font_small).grid(row=0, column=3, padx=(8, 0))
+                      height=30, font=self.font_small).grid(row=0, column=2, padx=(8, 0))
+        self.obs_state = tk.Label(kb_row, text="", font=self.font_small, bg=BG,
+                                  fg=MUTED, anchor="w", justify="left", wraplength=720)
+        self.obs_state.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
         tk.Label(f, text="MCP 配置", font=self.font_main, bg=BG, fg=MUTED).grid(
             row=5, column=0, sticky="nw", pady=(10, 6))
@@ -77,11 +78,18 @@ class Settings:
         box.columnconfigure(0, weight=1)
         self.mcp_path = tk.Label(box, text=mcpcfg.mcp_json_path(), font=self.font_small,
                                  bg=PANEL, fg=MUTED, anchor="w")
-        self.mcp_path.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
+        box.columnconfigure(0, weight=1)
+        box.rowconfigure(1, weight=1)
+        self.mcp_path.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(8, 2))
         self.preview = tk.Text(box, height=7, font=("Consolas", 9), bg=SURFACE, fg=TEXT,
                                insertbackground=TEXT, relief="flat", wrap="none",
                                padx=8, pady=6)
-        self.preview.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        ysb = ttk.Scrollbar(box, orient="vertical", command=self.preview.yview)
+        xsb = ttk.Scrollbar(box, orient="horizontal", command=self.preview.xview)
+        self.preview.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        self.preview.grid(row=1, column=0, sticky="nsew", padx=(8, 0), pady=(0, 0))
+        ysb.grid(row=1, column=1, sticky="ns", padx=(0, 8), pady=(0, 0))
+        xsb.grid(row=2, column=0, sticky="ew", padx=(8, 0), pady=(0, 8))
         self.preview.insert("1.0", mcpcfg.fragment_text())
         self.preview.configure(state="disabled")
 
@@ -103,7 +111,7 @@ class Settings:
         foot.columnconfigure(0, weight=1)
         CapsuleButton(foot, text="保存", command=self.save, primary=True, width=120,
                       height=38, font=(family, 10, "bold")).grid(row=0, column=1, padx=(0, 8))
-        CapsuleButton(foot, text="关闭", command=self.root.destroy, width=88,
+        CapsuleButton(foot, text="关闭", command=self.close, width=88,
                       height=38, font=self.font_small).grid(row=0, column=2)
 
         self.project.insert(0, self.cfg.get("project_dir", ""))
@@ -112,15 +120,19 @@ class Settings:
         sec = detect.mask_sec_uid(self.cfg.get("expect_sec_uid", ""))
         self.account.insert(0, f"{acct}  {sec}".strip())
         self.account.entry.configure(state="readonly")   # 先写值再置只读，否则写不进去
-        self.root.bind("<Escape>", lambda _e: self.root.destroy())
+        self._saved = self._snapshot()
+        self.root.bind("<Escape>", lambda _e: self.close())
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.refresh_obsidian()
         self.refresh_state()
+        self.root.after_idle(self.project.reveal_end)
+        self.root.after_idle(self.kb.reveal_end)
 
     # ---------------------------------------------------------------- 布局
-    def _row(self, parent, row, label):
+    def _row(self, parent, row, label, path=False):
         tk.Label(parent, text=label, font=self.font_main, bg=BG, fg=MUTED).grid(
             row=row, column=0, sticky="w", pady=(0, 10))
-        e = RoundedEntry(parent, font=self.font_main)
+        e = RoundedEntry(parent, font=self.font_main, path=path, path_font=self.font_small)
         e.grid(row=row, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
         return e
 
@@ -182,9 +194,21 @@ class Settings:
             bits.append("知识库就绪" if kb_ok else f"知识库缺失（{kb_err}）")
         self.set_state(" · ".join(bits), CYAN if all(("缺失" not in b) for b in bits) else WARN)
 
+    def _snapshot(self):
+        return (self.project.get().strip(), self.kb.get().strip(),
+                self.min_count.get().strip())
+
+    def close(self):
+        if self._snapshot() != getattr(self, "_saved", self._snapshot()):
+            if not messagebox.askyesno(APP_NAME, "有未保存的更改，确定放弃并关闭？",
+                                       parent=self.root):
+                return
+        self.root.destroy()
+
     def show_account(self):
+        nick = self.cfg.get("expect_nickname", "") or "未设置"
         sec = self.cfg.get("expect_sec_uid", "") or "（未设置，请回到「初始化本机环境」校验并采用）"
-        self.set_state(f"账号：{self.cfg.get('expect_nickname','') or '未设置'} · sec_uid：{sec}")
+        messagebox.showinfo("账号标识", f"{nick}\n{sec}", parent=self.root)
 
     # ---------------------------------------------------------------- 动作
     def autodetect(self):
@@ -194,18 +218,21 @@ class Settings:
             return
         self.project.delete(0, "end")
         self.project.insert(0, cands[0])
+        self.project.reveal_end()
         kb = detect.detect_kb_dir(cands[0])
         if kb:
             self.kb.delete(0, "end")
             self.kb.insert(0, kb)
+            self.kb.reveal_end()
         self.refresh_state()
 
     def pick_project(self):
         from tkinter import filedialog
-        d = filedialog.askdirectory(title="选择 TikTokDownloader 项目目录")
+        d = filedialog.askdirectory(title="选择采集项目目录（需含 extract_favorites.py）")
         if d:
             self.project.delete(0, "end")
             self.project.insert(0, os.path.normpath(d))
+            self.project.reveal_end()
             self.refresh_state()
 
     def pick_kb(self):
@@ -214,6 +241,7 @@ class Settings:
         if d:
             self.kb.delete(0, "end")
             self.kb.insert(0, os.path.normpath(d))
+            self.kb.reveal_end()
             self.refresh_state()
 
     def save(self):
@@ -244,6 +272,7 @@ class Settings:
                         min_count=max(0, mn), kb_enabled=bool(want_kb),
                         obsidian_exe=self.obsidian.get("exe", "") or self.cfg.get("obsidian_exe", ""))
         config.save(self.cfg)
+        self._saved = self._snapshot()
         if self.on_done:
             try:
                 self.on_done()
