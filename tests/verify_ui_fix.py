@@ -202,12 +202,14 @@ def test_tk():
         class Ev:
             pass
 
-        ev = Ev()
-        ev.x, ev.y = -8, 10
-        btn._on_release(ev)
+        ev_out, ev_in = Ev(), Ev()
+        ev_out.x, ev_out.y = -8, 10
+        ev_in.x, ev_in.y = 20, 18
+        btn._on_press(ev_in)
+        btn._on_release(ev_out)
         check("松开在按钮外不触发", fired["n"] == 0, str(fired))
-        ev.x, ev.y = 20, 18
-        btn._on_release(ev)
+        btn._on_press(ev_in)
+        btn._on_release(ev_in)
         check("松开在按钮内触发", fired["n"] == 1, str(fired))
 
         count = {"n": 0}

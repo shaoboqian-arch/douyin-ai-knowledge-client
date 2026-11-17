@@ -48,11 +48,31 @@ def texts(widget):
 
 
 def main():
+    import ui_kit
+
+    print("== 配色对比度（WCAG AA）==")
+    for name, fg, bg, need in (
+            ("正文/底色", ui_kit.TEXT, ui_kit.BG, 4.5),
+            ("辅助字/底色", ui_kit.MUTED, ui_kit.BG, 4.5),
+            ("辅助字/面板", ui_kit.MUTED, ui_kit.SURFACE, 4.5),
+            ("辅助字/沙色底", ui_kit.MUTED, ui_kit.SAND, 4.5),
+            ("辅助字/卡片", ui_kit.MUTED, ui_kit.CARD, 4.5),
+            ("主按钮字/薄荷", ui_kit.ON_MINT, ui_kit.MINT, 4.5),
+            ("主按钮悬停", ui_kit.ON_MINT, ui_kit.MINT_HI, 4.5),
+            ("完成态字/完成底", ui_kit.TEXT, ui_kit.DONE_BG, 4.5),
+            ("成功态字/底色", ui_kit.GREEN, ui_kit.BG, 4.5),
+            ("警告字/底色", ui_kit.WARN, ui_kit.BG, 4.5),
+            ("警告字/沙色底", ui_kit.WARN, ui_kit.SAND, 4.5),
+            ("错误字/错误底", ui_kit.ERR, ui_kit.ERR_BG, 4.5),
+            ("错误字/底色", ui_kit.ERR, ui_kit.BG, 4.5)):
+        ratio = ui_kit.contrast(fg, bg)
+        check(f"{name} {ratio}:1 ≥ {need}", ratio >= need, str(ratio))
+
     try:
         import tkinter as tk
     except ImportError:
-        print("SKIP  本环境没有 tkinter，未装系统包强跑 GUI（配色断言与控件用例都需要 Tk）")
-        return 0
+        print("SKIP  本环境没有 tkinter，已跑配色对比度；其余 GUI 用例跳过")
+        return 1 if FAILS else 0
 
     tmp = tempfile.mkdtemp(prefix="dysync-ui-")
     kb = _fixture.make_kb(tmp)
@@ -61,21 +81,7 @@ def main():
 
     import common
     import gui
-    import ui_kit
     from common import APP_NAME, PHASES, VERSION
-
-    print("== 配色对比度（WCAG AA）==")
-    for name, fg, bg, need in (
-            ("正文/底色", ui_kit.TEXT, ui_kit.BG, 4.5),
-            ("辅助字/底色", ui_kit.MUTED, ui_kit.BG, 4.5),
-            ("辅助字/面板", ui_kit.MUTED, ui_kit.SURFACE, 4.5),
-            ("主按钮字/品牌红", ui_kit.ON_ACCENT, ui_kit.ACCENT, 4.5),
-            ("主按钮悬停", ui_kit.ON_ACCENT, ui_kit.ACCENT_HI, 4.5),
-            ("完成态字/完成底", ui_kit.CYAN, ui_kit.DONE_BG, 4.5),
-            ("错误字/错误底", ui_kit.ERR, ui_kit.ERR_BG, 4.5),
-            ("错误字/底色", ui_kit.ERR, ui_kit.BG, 4.5)):
-        ratio = ui_kit.contrast(fg, bg)
-        check(f"{name} {ratio}:1 ≥ {need}", ratio >= need, str(ratio))
 
     root = tk.Tk()
     ui_kit.apply_theme(root)
@@ -181,7 +187,8 @@ def main():
     dp.open()
     root.update()
     head = dp._body.winfo_children()[0]
-    arrows = [w for w in head.winfo_children() if w.cget("text") in ("‹", "›")]
+    arrows = [w for w in head.winfo_children()
+               if w.winfo_class() == "Label" and str(w.cget("text")) in ("‹", "›")]
     check("日历有两个切换箭头", len(arrows) == 2)
     check("箭头是纯文字标签（无焦点框）",
           all(w.winfo_class() == "Label" for w in arrows),
