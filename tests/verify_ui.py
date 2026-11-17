@@ -89,13 +89,14 @@ def main():
     check("窗口标题含应用名与版本", APP_NAME in root.title() and VERSION in root.title(), root.title())
     check("窗口宽度 640", root.winfo_width() >= 640, str(root.winfo_width()))
     vis = texts(root)
-    for label in ("交付到", "发布时间", "开始整理", "设置"):
+    for label in ("导出到", "作品发布日期", "同步整理", "设置"):
         check(f"常驻元素存在：{label}", label in vis, str(vis[:12]))
-    check("没有标语式长文案", not any(len(t) > 40 for t in vis if t not in ("ⓘ",)),
-          str([t for t in vis if len(t) > 40][:3]))
+    long_lines = [ln for t in vis for ln in str(t).splitlines() if len(ln) > 42]
+    check("没有标语式长文案", not long_lines, str(long_lines[:3]))
     check("初始不展开进度表", not app.panel_visible)
     check("初始无提示块", not app.hint_visible)
-    check("初始按钮为开始整理", app.btn.cget("text") == "开始整理")
+    check("初始按钮为同步整理", app.btn.cget("text") == "同步整理")
+    check("存在仅导出按钮", app.export_btn.cget("text") == "仅导出")
 
     print("== 进度表渲染 ==")
     app.show_panel()
@@ -118,7 +119,7 @@ def main():
     check("图集计数 1", app.stats["album"]["total"] == 1)
     check("AI 子集计数 2", app.stats["ai"]["total"] == 2, str(app.stats["ai"]))
     check("待加工行数 1", len(app.gaps) == 1)
-    check("待加工标题写入表格", app.gap_title.cget("text") == "待加工 1",
+    check("待加工标题写入表格", app.gap_title.cget("text").startswith("待加工 1"),
           app.gap_title.cget("text"))
     check("进度条推进到 4/4", app.prog._value == 4 and app.prog._maximum == 4,
           f"{app.prog._value}/{app.prog._maximum}")

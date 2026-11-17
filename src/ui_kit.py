@@ -17,6 +17,8 @@ from common import pointer_inside
 
 BG = "#0e1014"
 PANEL = "#151922"
+CARD = "#141924"
+CARD_LINE = "#242c3a"
 SURFACE = "#1c2130"
 TEXT = "#e8edf5"
 MUTED = "#9aa5b6"        # 对 BG 8.0:1、对 SURFACE 6.4:1
@@ -309,11 +311,12 @@ class RoundedEntry(tk.Frame):
     """
 
     def __init__(self, master, font=None, width=20, pxwidth=None, placeholder="",
-                 path=False, path_font=None, **kw):
+                 path=False, path_font=None, panel_bg=BG, **kw):
         self._placeholder = placeholder
         self._path_mode = False
         self._right_inset = 14
-        super().__init__(master, bg=BG, highlightthickness=0)
+        self._panel_bg = panel_bg
+        super().__init__(master, bg=panel_bg, highlightthickness=0)
         self._height = 36
         if pxwidth:
             self._min_w = int(pxwidth)
@@ -326,7 +329,7 @@ class RoundedEntry(tk.Frame):
         self.configure(width=self._min_w, height=self._height)
         self.pack_propagate(False)
         self.grid_propagate(False)
-        self._canvas = tk.Canvas(self, highlightthickness=0, bd=0, bg=BG)
+        self._canvas = tk.Canvas(self, highlightthickness=0, bd=0, bg=panel_bg)
         self._canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.entry = tk.Entry(
             self, font=font, width=width, bd=0, highlightthickness=0,
@@ -549,6 +552,75 @@ class ToggleSwitch(tk.Canvas):
             _round_rect(self, 1, 1, w - 1, h - 1, r - 1, fill="", outline=CYAN, width=1)
 
 
+class CheckBox(tk.Canvas):
+    """标准复选框：方框 + 勾，支持键盘空格/回车与禁用态。"""
+
+    SIZE = 20
+
+    def __init__(self, master, value=False, command=None, size=None, **kw):
+        self._size = int(size or self.SIZE)
+        super().__init__(master, width=self._size, height=self._size,
+                         highlightthickness=0, bd=0, bg=kw.pop("bg", BG),
+                         cursor="hand2", takefocus=1, **kw)
+        self._value = bool(value)
+        self._command = command
+        self._enabled = True
+        self._focus = False
+        self.bind("<Button-1>", self._toggle)
+        self.bind("<space>", self._toggle)
+        self.bind("<Return>", self._toggle)
+        self.bind("<FocusIn>", lambda _e: self._set_focus(True))
+        self.bind("<FocusOut>", lambda _e: self._set_focus(False))
+        self.bind("<Configure>", lambda _e: self._draw())
+        self._draw()
+
+    def get(self):
+        return self._value
+
+    def set(self, value):
+        self._value = bool(value)
+        self._draw()
+
+    def set_enabled(self, enabled):
+        self._enabled = bool(enabled)
+        try:
+            self.configure(cursor="hand2" if enabled else "arrow")
+        except tk.TclError:
+            pass
+        self._draw()
+
+    def _set_focus(self, focus):
+        self._focus = bool(focus)
+        self._draw()
+
+    def _toggle(self, _e=None):
+        if not self._enabled:
+            return "break"
+        self._value = not self._value
+        self._draw()
+        if self._command:
+            self._command(self._value)
+        return "break"
+
+    def _draw(self):
+        self.delete("all")
+        n = self._size
+        if self._value and self._enabled:
+            fill, outline = ACCENT, "#c9183f"
+        elif not self._enabled:
+            fill, outline = SURFACE, BORDER
+        else:
+            fill, outline = SURFACE, "#3a4357"
+        _round_rect(self, 2, 2, n - 2, n - 2, 5, fill=fill, outline=outline)
+        if self._value:
+            color = WHITE if self._enabled else MUTED
+            self.create_line(n * 0.28, n * 0.52, n * 0.44, n * 0.68,
+                             n * 0.73, n * 0.32, fill=color, width=2,
+                             capstyle="round", joinstyle="round")
+        if self._focus:
+            _round_rect(self, 1, 1, n - 1, n - 1, 6, fill="", outline=CYAN, width=1)
+
+
 class PhaseBadge(tk.Canvas):
     """阶段胶囊微标：pending / now / done / failed。"""
 
@@ -663,9 +735,10 @@ class DatePicker:
     embedded=True 时把「▾」收进圆角输入框尾部，不再单独占一列。
     """
 
-    def __init__(self, entry, font=None, embedded=False):
+    def __init__(self, entry, font=None, embedded=False, on_pick=None):
         self.entry = entry
         self.font = font or ("Microsoft YaHei UI", 9)
+        self.on_pick = on_pick
         self.win = None
         self._trigger = None
         if embedded:
@@ -788,6 +861,16 @@ class DatePicker:
         except tk.TclError:
             pass
         self.close()
+        if self.on_pick:
+            try:
+                self.on_pick()
+            except Exception:
+                pass
+        if self.on_pick:
+            try:
+                self.on_pick()
+            except Exception:
+                pass
 
     def _clear(self):
         try:

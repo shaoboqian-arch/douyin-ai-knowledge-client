@@ -18,7 +18,7 @@ import pipeline
 from common import APP_NAME, data_dir
 from ui_kit import (
     BG, BORDER, CYAN, ERR, MUTED, PANEL, SURFACE, TEXT, WARN,
-    CapsuleButton, RoundedEntry, ToggleSwitch, apply_icon, apply_theme, center, fonts,
+    CapsuleButton, CheckBox, RoundedEntry, apply_icon, apply_theme, center, fonts,
 )
 
 
@@ -82,12 +82,15 @@ class Setup:
         self.obsidian = obs
         kb_row = tk.Frame(f, bg=BG)
         kb_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(0, 10))
-        self.kb_switch = ToggleSwitch(kb_row,
-                                      value=bool(self.cfg.get("kb_enabled", True)) and obs["installed"])
+        self.kb_switch = CheckBox(kb_row,
+                                  value=bool(self.cfg.get("kb_enabled", True)) and obs["installed"],
+                                  bg=BG)
         self.kb_switch.set_enabled(obs["installed"])
         self.kb_switch.grid(row=0, column=0, sticky="w")
-        tk.Label(kb_row, text="同时重建 Obsidian 知识库", font=font_main, bg=BG,
-                 fg=TEXT).grid(row=0, column=1, sticky="w", padx=(10, 12))
+        kb_label = tk.Label(kb_row, text="同时重建 Obsidian 知识库", font=font_main,
+                            bg=BG, fg=TEXT, cursor="hand2")
+        kb_label.grid(row=0, column=1, sticky="w", padx=(8, 12))
+        kb_label.bind("<Button-1>", lambda _e: self.kb_switch._toggle())
         self.obs_state = tk.Label(kb_row, text="", font=font_small, bg=BG,
                                   fg=MUTED, anchor="w")
         self.obs_state.grid(row=0, column=2, sticky="ew")

@@ -6,7 +6,7 @@
 
 采集 · 账号硬校验 · 增量对比 · 两级分类 · Excel/CSV · Obsidian · 体检 · 入库报告
 
-![Version](https://img.shields.io/badge/version-V0.1.2-fe2c55.svg)
+![Version](https://img.shields.io/badge/version-V0.1.3-fe2c55.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-brightgreen.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab.svg)
 ![GUI](https://img.shields.io/badge/GUI-Tkinter-25f4ee.svg)
@@ -30,9 +30,11 @@
 
 ## 主要功能
 
-### 🚀 一次点击跑完
+### 🚀 两个动作，不混淆
 
-`校验 → 采集 → 对比 → 重建 → 导出 → 完成`，阶段实时高亮；采集时按页显示「第 N 页 · 累计 X 条」。
+- **同步整理**：校验 → 全量采集 → 对比 → 重建 → 导出，阶段实时高亮；采集时按页显示进度
+- **仅导出**：用项目里已有的数据直接写批次，不联网、不重新采集
+- 日期下方实时显示「范围内 N 条」；范围 0 条时同步会二次确认，仅导出直接提示
 
 ### 🛡️ 两道硬门禁
 
@@ -122,12 +124,12 @@ export-<范围>-<时间戳>/
 
 ## 下载安装
 
-当前版本 **V0.1.2**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
+当前版本 **V0.1.3**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
 
 | 安装包 | 说明 |
 |:---|:---|
-| `*-Setup-V0.1.2.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
-| `*-V0.1.2-portable.zip` | 解压后双击即用，不写注册表 |
+| `*-Setup-V0.1.3.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
+| `*-V0.1.3-portable.zip` | 解压后双击即用，不写注册表 |
 
 **前置条件**
 
@@ -141,8 +143,9 @@ export-<范围>-<时间戳>/
 
 1. 双击打开「抖音收藏整理」
 2. 首次运行点主按钮「初始化本机环境」：项目目录 → 校验账号并采用 → 知识库（可跳过）
-3. 选交付目录与发布时间范围（**留空 = 全部**，起止都含当天），点「开始整理」
-4. 完成后点「打开」进入批次目录；点「入库报告」看本轮结果；有待加工条目按 `_待加工.csv` 补齐后重新整理
+3. 在「导出设置」里选导出目录、作品发布日期（**留空 = 全部**，起止都含当天）
+4. 点「同步整理」：全量采集后重建知识库，再导出所选范围；只想用现有数据出批次时点「仅导出」
+5. 完成后点「打开」进入批次目录；点「入库报告」看本轮结果；待加工条目按 `_待加工.csv` 补齐后重新同步
 
 ### 命令行（可选）
 
