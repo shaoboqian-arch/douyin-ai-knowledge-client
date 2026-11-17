@@ -7,6 +7,7 @@
 """
 import json
 import os
+import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog
@@ -29,6 +30,8 @@ class Setup:
         self.cfg = config.load()
         self.probed = {"nickname": "", "sec_uid": ""}
         self.busy = False
+        self._scanning = False
+        self._scan_q = queue.Queue()
 
         root.title(f"初始化 {APP_NAME}")
         root.resizable(False, False)
@@ -46,8 +49,9 @@ class Setup:
         self.project = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
         self.project.grid(row=0, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
         self.project.insert(0, self.cfg.get("project_dir", ""))
-        CapsuleButton(f, text="自动发现", command=self.autodetect, width=78, height=36,
-                      font=font_small).grid(row=0, column=2, padx=(0, 6), pady=(0, 10))
+        self.scan_btn = CapsuleButton(f, text="自动发现", command=self.autodetect,
+                                      width=78, height=36, font=font_small)
+        self.scan_btn.grid(row=0, column=2, padx=(0, 6), pady=(0, 10))
         CapsuleButton(f, text="浏览…", command=self.pick_project, width=64, height=36,
                       font=font_small).grid(row=0, column=3, pady=(0, 10))
 
@@ -101,30 +105,71 @@ class Setup:
         if self.cfg.get("project_dir"):
             self.after_project(quiet=True)
         self.refresh()
+        if not self.state.cget("text"):
+            self.set_state("第 1 步：点「自动发现」或「浏览…」选项目目录")
         self.root.after_idle(self.project.reveal_end)
         self.root.after_idle(self.kb.reveal_end)
+        self.root.after(120, self._poll_scan)
 
     # ---------------------------------------------------------------- 动作
     def set_state(self, text, color=MUTED):
         self.state.configure(text=text, fg=color)
 
-    def autodetect(self):
-        cands = detect.candidate_project_dirs(self.project.get().strip())
-        if not cands:
-            self.set_state("没有自动找到项目目录，请手动选择含 extract_favorites.py 的目录", WARN)
-            return
+    def _apply_project(self, path):
         self.project.delete(0, "end")
-        self.project.insert(0, cands[0])
+        self.project.insert(0, os.path.normpath(path))
         self.project.reveal_end()
         self.after_project()
+
+    def autodetect(self):
+        """先查常见位置；没命中再做一次有界浅层扫描（不写死任何本机路径）。"""
+        if getattr(self, "_scanning", False):
+            return
+        cands = detect.candidate_project_dirs(self.project.get().strip())
+        if cands:
+            self._apply_project(cands[0])
+            return
+
+        self._scanning = True
+        self.scan_btn.configure(state="disabled", text="查找中…")
+        self.set_state("正在常见位置查找 TikTokDownloader（最多几秒）…")
+        extra = self.project.get().strip()
+
+        def work():
+            # 子线程只放结果，界面由主线程的轮询取走（tkinter 不保证跨线程 after 安全）
+            self._scan_q.put(detect.candidate_project_dirs(extra, deep=True))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _poll_scan(self):
+        try:
+            while True:
+                hits = self._scan_q.get_nowait()
+                self._scan_done(hits)
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            self.root.after(120, self._poll_scan)
+        except tk.TclError:
+            pass
+
+    def _scan_done(self, hits):
+        self._scanning = False
+        self.scan_btn.configure(state="normal", text="自动发现")
+        if hits:
+            self._apply_project(hits[0])
+            return
+        self.set_state("没找到 TikTokDownloader；点「浏览…」选含 extract_favorites.py 的目录", WARN)
 
     def pick_project(self):
         d = filedialog.askdirectory(title="选择采集项目目录（需含 extract_favorites.py）")
         if d:
-            self.project.delete(0, "end")
-            self.project.insert(0, os.path.normpath(d))
-            self.project.reveal_end()
-            self.after_project()
+            d = os.path.normpath(d)
+            self._apply_project(d)
+            if detect.is_project_dir(d):
+                config.update(project_dir=d)   # 记住这次选择，下次打开不用再找
 
     def pick_kb(self):
         d = filedialog.askdirectory(title="选择 Obsidian 知识库目录")

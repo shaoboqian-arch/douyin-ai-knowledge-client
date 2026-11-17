@@ -104,6 +104,37 @@ def main():
         finally:
             detect.find_obsidian = orig_find
 
+        print("== 项目目录发现 ==")
+        fake_home = os.path.join(tmp, "fakehome")
+        deep = os.path.join(fake_home, "ws", "a", "b", "TikTokDownloader")
+        os.makedirs(deep, exist_ok=True)
+        open(os.path.join(deep, "extract_favorites.py"), "w").write("")
+        hits = detect.scan_for_projects(fake_home)
+        check("深层目录可被扫描到", deep.replace("/", "\\") in
+              [h.replace("/", "\\") for h in hits], str(hits))
+        shallow = os.path.join(fake_home, "TikTokDownloader")
+        os.makedirs(shallow, exist_ok=True)
+        check("同名但无标记文件不算",
+              shallow.replace("/", "\\") not in
+              [h.replace("/", "\\") for h in detect.scan_for_projects(fake_home)])
+        far = os.path.join(fake_home, "1", "2", "3", "4", "5", "TikTokDownloader")
+        os.makedirs(far, exist_ok=True)
+        open(os.path.join(far, "extract_favorites.py"), "w").write("")
+        check("超出深度不扫（默认 4 层）",
+              far.replace("/", "\\") not in
+              [h.replace("/", "\\") for h in detect.scan_for_projects(fake_home)])
+        skip_dir = os.path.join(fake_home, "AppData", "x", "TikTokDownloader")
+        os.makedirs(skip_dir, exist_ok=True)
+        open(os.path.join(skip_dir, "extract_favorites.py"), "w").write("")
+        check("跳过 AppData 等重目录",
+              skip_dir.replace("/", "\\") not in
+              [h.replace("/", "\\") for h in detect.scan_for_projects(fake_home)])
+        os.environ["DOUYIN_PROJECT_DIR"] = deep
+        check("环境变量可指定项目目录",
+              any(os.path.normpath(h) == os.path.normpath(deep)
+                  for h in detect.candidate_project_dirs()))
+        os.environ.pop("DOUYIN_PROJECT_DIR", None)
+
         print("== 开关与状态 ==")
         kb, project, spath = prepare(tmp)
         cfg = config.load()

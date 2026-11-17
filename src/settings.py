@@ -4,6 +4,7 @@
 写入 MCP 配置只增改 douyin-fav-sync 一个键；写前备份、原子替换、解析失败不写。
 """
 import os
+import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -27,6 +28,7 @@ class Settings:
         self.cfg = config.load()
         self.full_state = ""
         self.busy = False
+        self._scan_q = queue.Queue()
 
         root.title(f"设置 · {APP_NAME} {VERSION}")
         root.resizable(True, True)
@@ -40,8 +42,8 @@ class Settings:
         f.columnconfigure(1, weight=1)
 
         self.project = self._row(f, 0, "项目目录", path=True)
-        self._btn(f, 0, "自动发现", self.autodetect, width=78)
-        self._btn(f, 0, "浏览…", self.pick_project, width=64, padx=(6, 0))
+        self._btn(f, 0, "自动发现", self.autodetect, width=78, col=2)
+        self._btn(f, 0, "浏览…", self.pick_project, width=64, padx=(6, 0), col=3)
 
         self.kb = self._row(f, 1, "知识库", path=True)
         self._btn(f, 1, "浏览…", self.pick_kb, width=64, padx=(6, 0))
@@ -125,6 +127,7 @@ class Settings:
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.refresh_obsidian()
         self.refresh_state()
+        self.root.after(120, self._poll_scan)
         self.root.after_idle(self.project.reveal_end)
         self.root.after_idle(self.kb.reveal_end)
 
@@ -136,9 +139,11 @@ class Settings:
         e.grid(row=row, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
         return e
 
-    def _btn(self, parent, row, text, cmd, width=64, padx=(6, 0)):
-        CapsuleButton(parent, text=text, command=cmd, width=width, height=36,
-                      font=self.font_small).grid(row=row, column=2, padx=padx, pady=(0, 10))
+    def _btn(self, parent, row, text, cmd, width=64, padx=(6, 0), col=2):
+        btn = CapsuleButton(parent, text=text, command=cmd, width=width, height=36,
+                            font=self.font_small)
+        btn.grid(row=row, column=col, padx=padx, pady=(0, 10))
+        return btn
 
     # ---------------------------------------------------------------- 状态
     def set_state(self, text, color=MUTED):
@@ -212,18 +217,51 @@ class Settings:
 
     # ---------------------------------------------------------------- 动作
     def autodetect(self):
-        cands = detect.candidate_project_dirs(self.project.get().strip())
-        if not cands:
-            self.set_state("没有自动找到项目目录", WARN)
+        if self.busy:
             return
+        cands = detect.candidate_project_dirs(self.project.get().strip())
+        if cands:
+            self._apply_project(cands[0])
+            return
+        self.busy = True
+        self.set_state("正在常见位置查找 TikTokDownloader（最多几秒）…")
+
+        def work():
+            self._scan_q.put(detect.candidate_project_dirs(
+                self.project.get().strip(), deep=True))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _poll_scan(self):
+        try:
+            while True:
+                self._scan_done(self._scan_q.get_nowait())
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            self.root.after(120, self._poll_scan)
+        except tk.TclError:
+            pass
+
+    def _scan_done(self, hits):
+        self.busy = False
+        if not hits:
+            self.set_state("没找到 TikTokDownloader；请用「浏览…」指定", WARN)
+            return
+        self._apply_project(hits[0])
+
+    def _apply_project(self, path):
         self.project.delete(0, "end")
-        self.project.insert(0, cands[0])
+        self.project.insert(0, os.path.normpath(path))
         self.project.reveal_end()
-        kb = detect.detect_kb_dir(cands[0])
+        kb = detect.detect_kb_dir(path)
         if kb:
             self.kb.delete(0, "end")
             self.kb.insert(0, kb)
             self.kb.reveal_end()
+        self.refresh_state()
         self.refresh_state()
 
     def pick_project(self):

@@ -55,7 +55,8 @@ def find_window():
             cls = ctypes.create_unicode_buffer(64)
             user32.GetClassNameW(hwnd, cls, 64)
             # 必须是我们自己的 Tk 窗口：WorkBuddy 侧栏标题里也可能出现应用名
-            if cls.value == "TkTopLevel" and buf.value.startswith(APP_NAME + "  "):
+            # 精确匹配标题里的版本：本机可能还开着旧版本的窗口
+            if cls.value == "TkTopLevel" and buf.value.strip() == f"{APP_NAME}  {VERSION}":
                 found.append((hwnd, buf.value))
                 return False
         return True

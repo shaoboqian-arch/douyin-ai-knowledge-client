@@ -111,6 +111,29 @@ def main():
           and "…" in win.account.get(), win.account.get())
     check("MCP 预览含服务名", "douyin-fav-sync" in win.preview.get("1.0", "end"))
     check("知识库开关存在", hasattr(win, "kb_switch"))
+
+    # 同一行控件不得重叠（V0.1.2 发现「自动发现/浏览」被放进同一格）
+    def bbox(widget):
+        return (widget.winfo_rootx(), widget.winfo_rooty(),
+                widget.winfo_rootx() + widget.winfo_width(),
+                widget.winfo_rooty() + widget.winfo_height())
+
+    def overlap(a, b):
+        return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+
+    project_row = [win.project]
+    for child in win.project.master.winfo_children():
+        try:
+            text = child.cget("text")
+        except Exception:
+            continue
+        if text in ("自动发现", "浏览…"):
+            project_row.append(child)
+    bad = [(a, b) for i, a in enumerate(project_row) for b in project_row[i + 1:]
+           if overlap(bbox(a), bbox(b))]
+    check("项目目录行控件不重叠", not bad,
+          str([(getattr(a, "cget", lambda *_: "?")(), getattr(b, "cget", lambda *_: "?" )())
+               for a, b in bad]))
     check("Obsidian 状态已显示", "Obsidian" in win.obs_state.cget("text"),
           win.obs_state.cget("text"))
     out = os.path.join(APP, "验证输出")

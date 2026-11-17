@@ -6,7 +6,7 @@
 
 采集 · 账号硬校验 · 增量对比 · 两级分类 · Excel/CSV · Obsidian · 体检 · 入库报告
 
-![Version](https://img.shields.io/badge/version-V0.1.1-fe2c55.svg)
+![Version](https://img.shields.io/badge/version-V0.1.2-fe2c55.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-brightgreen.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab.svg)
 ![GUI](https://img.shields.io/badge/GUI-Tkinter-25f4ee.svg)
@@ -122,12 +122,12 @@ export-<范围>-<时间戳>/
 
 ## 下载安装
 
-当前版本 **V0.1.1**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
+当前版本 **V0.1.2**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
 
 | 安装包 | 说明 |
 |:---|:---|
-| `*-Setup-V0.1.1.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
-| `*-V0.1.1-portable.zip` | 解压后双击即用，不写注册表 |
+| `*-Setup-V0.1.2.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
+| `*-V0.1.2-portable.zip` | 解压后双击即用，不写注册表 |
 
 **前置条件**
 
@@ -185,7 +185,7 @@ export-<范围>-<时间戳>/
 
 ```bash
 python build/build.py          # 构建 dist/Setup + 便携 zip
-python tests/run_all.py 轮次名   # 11 步全量复检
+python tests/run_all.py 轮次名   # 12 步全量复检
 ```
 
 版本号唯一真源是 `src/common.py` 的 `VERSION`。发版前必须 11/11 PASS，且
@@ -200,7 +200,7 @@ python tests/run_all.py 轮次名   # 11 步全量复检
 douyin-ai-knowledge-client/
 ├── src/       界面、编排、两级分类、交付、入库报告、MCP、安装器
 ├── build/     构建脚本、图标、隔离依赖
-├── tests/     11 步复检（离线夹具 + 真实数据只读回归）
+├── tests/     12 步复检（离线夹具 + 真实数据只读回归）
 ├── docs/      工程说明与界面截图
 └── dist/      构建产物（exe / zip 不进 Git，走 Releases）
 ```

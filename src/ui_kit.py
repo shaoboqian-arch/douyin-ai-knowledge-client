@@ -453,21 +453,35 @@ class RoundedEntry(tk.Frame):
 
 
 class ToggleSwitch(tk.Canvas):
-    """带轨道的开关：开=品牌红，关=深灰。支持键盘空格/回车，聚焦时画青色焦点环。"""
+    """开关：开=品牌红，关=深灰描边；圆点带内边距与投影，支持悬停/键盘/焦点环。"""
 
-    def __init__(self, master, value=False, command=None, width=48, height=26, **kw):
-        super().__init__(master, width=width, height=height, highlightthickness=0,
-                         bd=0, bg=BG, cursor="hand2", takefocus=1, **kw)
+    W, H = 44, 24
+
+    def __init__(self, master, value=False, command=None, width=None, height=None, **kw):
+        super().__init__(master, width=width or self.W, height=height or self.H,
+                         highlightthickness=0, bd=0, bg=BG, cursor="hand2",
+                         takefocus=1, **kw)
         self._value = bool(value)
         self._command = command
         self._enabled = True
         self._focus = False
+        self._hover = False
         self.bind("<Button-1>", self._toggle)
         self.bind("<space>", self._toggle)
         self.bind("<Return>", self._toggle)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
         self.bind("<FocusIn>", self._on_focus_in)
         self.bind("<FocusOut>", self._on_focus_out)
         self.bind("<Configure>", lambda _e: self._draw())
+        self._draw()
+
+    def _on_enter(self, _e=None):
+        self._hover = True
+        self._draw()
+
+    def _on_leave(self, _e=None):
+        self._hover = False
         self._draw()
 
     def _on_focus_in(self, _e=None):
@@ -504,18 +518,35 @@ class ToggleSwitch(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        w = int(self.winfo_width() or 48)
-        h = int(self.winfo_height() or 26)
+        w = int(self.winfo_width() or self.W)
+        h = int(self.winfo_height() or self.H)
+        if w < 10 or h < 10:
+            return
         r = h / 2
-        fill = (ACCENT if self._value else BORDER) if self._enabled else SURFACE
-        _round_rect(self, 1, 1, w - 1, h - 1, r, fill=fill, outline="")
-        knob = h - 8
-        cx = (w - knob - 4) if self._value else 4
-        self.create_oval(cx, 4, cx + knob, 4 + knob, fill=TEXT if self._enabled else MUTED,
-                         outline="")
+
+        if not self._enabled:
+            track, outline = SURFACE, BORDER
+            knob, knob_line, shadow = MUTED, BORDER, SURFACE
+        elif self._value:
+            track = ACCENT_HI if self._hover else ACCENT
+            outline = "#c9183f"
+            knob, knob_line, shadow = WHITE, "#f3c7d2", "#c9183f"
+        else:
+            track = "#2a3142" if self._hover else "#232a39"
+            outline = "#3a4357"
+            knob, knob_line, shadow = "#e8edf5", "#c9d1e0", "#141a26"
+
+        _round_rect(self, 1, 1, w - 1, h - 1, r - 1, fill=track, outline=outline)
+
+        d = h - 8                      # 圆点直径：上下各留 4px
+        y = 4
+        x = (w - d - 4) if self._value else 4
+        # 投影：先画一层偏暗的圆，再叠主体，视觉上有厚度
+        self.create_oval(x, y + 1, x + d, y + 1 + d, fill=shadow, outline="")
+        self.create_oval(x, y, x + d, y + d, fill=knob, outline=knob_line)
+
         if self._focus and self._enabled:
-            _round_rect(self, 3, 3, w - 3, h - 3, max(2, r - 2),
-                        fill="", outline=CYAN, width=2)
+            _round_rect(self, 1, 1, w - 1, h - 1, r - 1, fill="", outline=CYAN, width=1)
 
 
 class PhaseBadge(tk.Canvas):

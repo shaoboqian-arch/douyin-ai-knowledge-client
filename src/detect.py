@@ -19,28 +19,85 @@ def is_project_dir(path):
     return bool(path) and os.path.isfile(os.path.join(path, MARKER))
 
 
-def candidate_project_dirs(extra=None):
-    """按可信度排序的项目目录候选（去重、只保留真实存在的）。"""
+def candidate_project_dirs(extra=None, deep=False):
+    """按可信度排序的项目目录候选（去重、只保留真实存在的）。
+
+    deep=True 时会在用户目录下做一次有界的浅层扫描（默认深度 4、最多 4000 个目录），
+    用来兜住「项目不在桌面/文档」的情况（例如放在某个工作区的子目录里）。
+    扫描不写任何东西，也不依赖固定路径。
+    """
     home = os.path.expanduser("~")
     pats = [
+        os.path.join(home, "TikTokDownloader"),
         os.path.join(home, "Desktop", "TikTokDownloader"),
         os.path.join(home, "桌面", "TikTokDownloader"),
         os.path.join(home, "Documents", "TikTokDownloader"),
         os.path.join(home, "文档", "TikTokDownloader"),
+        os.path.join(home, "Downloads", "TikTokDownloader"),
+        os.path.join(home, "下载", "TikTokDownloader"),
     ]
     found = []
     for p in [extra] if extra else []:
         if is_project_dir(p):
             found.append(_norm(p))
+    env_dir = os.environ.get("DOUYIN_PROJECT_DIR", "").strip()
+    if env_dir and is_project_dir(env_dir):
+        found.append(_norm(env_dir))
     for pat in pats:
         for p in sorted(glob.glob(pat)):
             if is_project_dir(p):
                 found.append(_norm(p))
+    if deep:
+        for p in scan_for_projects(home):
+            found.append(_norm(p))
     out = []
     for p in found:
         if p not in out:
             out.append(p)
     return out
+
+
+_SKIP_DIRS = {
+    "AppData", "Application Data", "Local Settings", "node_modules", ".git",
+    "venv", ".venv", "__pycache__", "Library", ".cache", ".conda", "anaconda3",
+    "miniconda3", "Pods", "target", "dist", "build", "Windows", "Program Files",
+    "Program Files (x86)", "ProgramData",
+}
+
+
+def scan_for_projects(root, max_depth=4, budget=4000):
+    """在 root 下找「目录名 + 标记文件」都符合的项目目录。
+
+    只走到 max_depth 层，最多看 budget 个目录；跳过明显的重目录。
+    这样既能找到深层的工作区子目录，也不会把整块盘扫一遍。
+    """
+    hits = []
+    stack = [(root, 0)]
+    seen = 0
+    while stack and seen < budget:
+        current, depth = stack.pop()
+        seen += 1
+        try:
+            entries = list(os.scandir(current))
+        except OSError:
+            continue
+        for e in entries:
+            try:
+                if not e.is_dir(follow_symlinks=False):
+                    continue
+            except OSError:
+                continue
+            name = e.name
+            if name == "TikTokDownloader":
+                if os.path.isfile(os.path.join(e.path, MARKER)):
+                    hits.append(_norm(e.path))
+                continue                      # 项目内部不再往下走
+            if depth >= max_depth:
+                continue
+            if name in _SKIP_DIRS or name.startswith("$"):
+                continue
+            stack.append((e.path, depth + 1))
+    return hits
 
 
 def venv_python(project_dir):
