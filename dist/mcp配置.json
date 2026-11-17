@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "douyin-fav-sync": {
+      "type": "stdio",
+      "command": "C:\\Users\\<用户名>\\AppData\\Local\\抖音收藏整理\\抖音收藏整理.exe",
+      "args": [
+        "--mcp"
+      ],
+      "description": "抖音收藏采集与知识库整理（读取本机抖音项目数据）"
+    }
+  }
+}

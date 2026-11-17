@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.log
+
+# 本机设置与运行数据
+src/_data/
+
+# 构建依赖与中间产物
+build/vendor/
+build/pyi-dist/
+build/pyi-work/
+build/*.spec
+build/core-staged/
+
+# 交付物走 Releases，不进 Git
+dist/*.exe
+dist/*.zip
+
+# 复检输出与交付批次
+验证输出/*
+!验证输出/.gitkeep
+整理输出/
+
+# 本机敏感词名单
+tests/public_safe.local.txt
