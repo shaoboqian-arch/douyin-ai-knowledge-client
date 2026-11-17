@@ -33,6 +33,47 @@ PY = sys.executable
 MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 
+def is_cache_path(path):
+    parts = os.path.normpath(path).replace("\\", "/").split("/")
+    return "__pycache__" in parts or path.endswith(".pyc")
+
+
+def add_data(src, dest="."):
+    """构造 PyInstaller --add-data；跳过 __pycache__ 与 .pyc。"""
+    if is_cache_path(src):
+        return []
+    if os.path.isfile(src):
+        return ["--add-data", src + os.pathsep + dest]
+    args = []
+    for base, dirs, files in os.walk(src):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        rel_base = os.path.relpath(base, src)
+        for name in files:
+            if name.endswith(".pyc"):
+                continue
+            fp = os.path.join(base, name)
+            target = dest if rel_base == "." else os.path.join(dest, rel_base)
+            args.extend(["--add-data", fp + os.pathsep + target])
+    return args
+
+
+def prune_caches(*roots):
+    """打包前清掉解释器缓存，避免以后增加 --add-data 时打进安装包。"""
+    for root in roots:
+        if not root or not os.path.isdir(root):
+            continue
+        for base, dirs, files in os.walk(root):
+            if "__pycache__" in dirs:
+                shutil.rmtree(os.path.join(base, "__pycache__"), ignore_errors=True)
+                dirs.remove("__pycache__")
+            for name in files:
+                if name.endswith(".pyc"):
+                    try:
+                        os.remove(os.path.join(base, name))
+                    except OSError:
+                        pass
+
+
 def run(cmd, env=None, check=True):
     print(">>>", " ".join(str(x) for x in cmd), flush=True)
     r = subprocess.run(cmd, env=env, cwd=APP, capture_output=True, text=True,
@@ -72,7 +113,7 @@ def build_exe():
         "--hidden-import", "report_ui",
         "--hidden-import", "kbreport",
         "--hidden-import", "subcat",
-        "--add-data", ico + os.pathsep + ".",
+        *add_data(ico, "."),
         "--icon", ico,
         "--distpath", PYI_DIST, "--workpath", PYI_WORK, "--specpath", HERE,
         os.path.join(SRC, "app.py"),
@@ -135,6 +176,7 @@ def verify(exe, setup):
 def main():
     os.makedirs(DIST, exist_ok=True)
     ensure_vendor()
+    prune_caches(SRC, HERE)
     exe = build_exe()
     setup = os.path.join(DIST, SETUP_EXE)
     shutil.copy2(exe, setup)

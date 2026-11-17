@@ -22,7 +22,7 @@ PHASES = (
     ("done", "完成"),
 )
 
-DEFAULT_MIN_COUNT = 1700   # 账号硬校验的条数量级下限（可在设置里改）
+DEFAULT_MIN_COUNT = 1000   # 账号硬校验的条数量级下限（可在设置里改）
 
 
 def is_frozen():

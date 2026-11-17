@@ -1,82 +1,173 @@
 # -*- coding: utf-8 -*-
-"""公开面自检：源码 / 文档 / 构建脚本里不能出现本机个人字面量。
+"""公开仓净化门禁：上传前必须全过，否则不许推。
 
-本机敏感词名单在 tests/public_safe.local.txt（不进 Git），
-缺文件或名单为空即判不通过 —— 没有名单的「通过」没有意义。
+用法：
+    python tests/verify_public_safe.py
 
-用法: python tests/verify_public_safe.py
+检查项（任一 FAIL 退出码 1）：
+  1. 本机敏感词名单        tests/public_safe.local.txt（不进 Git）；缺文件或为空则不通过
+  2. 名单字面量              已跟踪文本中不得出现名单里的字面量（命中只报文件与行号）
+  3. 邮箱                   只放行 GitHub noreply / example.*
+  4. 带真实用户名的绝对路径   占位符（尖括号用户名）放行，真实用户名拦
+  5. 手机号                 11 位大陆号段
+  6. 跟踪清单卫生           验证输出 / 整理输出 / 构建产物 / __pycache__ / dist 二进制不得入 Git
+  7. 提交作者邮箱           全部可达提交必须是 noreply
+  8. 标签指向               tag 必须落在当前历史内
+  9. 名单文件未被跟踪       public_safe.local.txt 不得出现在 git ls-files
+
+按 git ls-files 扫描已跟踪文本（含已跟踪的 dist/build 说明），不整目录跳过 dist/ 与 build/。
+图片等二进制仍跳过，发版前需再人工查看截图与 Release 说明。
+
+只读：不修改任何文件。命中敏感词时只报文件与行号，不打印敏感词原文。
 """
 import os
+import re
+import subprocess
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-APP = os.path.dirname(HERE)
-LIST = os.path.join(HERE, "public_safe.local.txt")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCAL_LIST = os.path.join("tests", "public_safe.local.txt")
+LOCAL_LIST_PATH = os.path.join(ROOT, LOCAL_LIST)
+results = []
 
-SKIP_DIRS = {".git", "__pycache__", "vendor", "pyi-dist", "pyi-work", "dist",
-             "验证输出", "整理输出", "src/_data", "build"}
-SKIP_EXT = {".pyc", ".exe", ".zip", ".ico", ".png", ".jpg", ".db", ".log"}
+# 邮箱白名单（子串匹配）
+MAIL_ALLOW = ("users.noreply.github.com", "noreply@", "example.com",
+              "example.org", "localhost", "@test")
+
+# 允许出现的路径占位符
+PATH_PLACEHOLDERS = {"<用户名>", "<用户>", "<user>", "<name>", "<username>",
+                     "用户名", "用户", "你的用户名", "name", "user", "username",
+                     "xxx", "*", "…", "..."}
+
+# 绝对路径：单反斜杠、双反斜杠、正斜杠都要认
+PATH_RES = (
+    re.compile(r"[A-Za-z]:[\\/]{1,2}Users[\\/]([^\\/\s\"'`]+)"),
+    re.compile(r"/(?:Users|home)/([^/\s\"'`]+)"),
+)
+
+TEXT_EXT = (".py", ".md", ".json", ".txt", ".csv", ".yml", ".yaml", ".toml",
+            ".ini", ".cfg", ".bat", ".ps1", ".sh", ".html", ".js", ".css")
 
 
-def load_needles():
-    if not os.path.isfile(LIST):
-        return []
-    out = []
-    with open(LIST, encoding="utf-8") as f:
-        for line in f:
-            s = line.strip()
-            if s and not s.startswith("#"):
-                out.append(s)
-    return out
+def check(name, ok, detail=""):
+    results.append((name, bool(ok)))
+    print(("PASS " if ok else "FAIL ") + name + (f"  {detail}" if detail else ""), flush=True)
 
 
-def iter_files():
-    for base, dirs, files in os.walk(APP):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS
-                   and os.path.relpath(os.path.join(base, d), APP).replace("\\", "/")
-                   not in SKIP_DIRS]
-        for name in files:
-            if os.path.splitext(name)[1].lower() in SKIP_EXT:
+def git(*args):
+    r = subprocess.run(["git"] + list(args), cwd=ROOT, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    return r.stdout
+
+
+def tracked_files():
+    return [p.strip() for p in git("ls-files").splitlines() if p.strip()]
+
+
+def read_text(path):
+    try:
+        with open(os.path.join(ROOT, path), "r", encoding="utf-8", errors="strict") as f:
+            return f.read()
+    except (UnicodeDecodeError, OSError):
+        return None
+
+
+def load_local_secrets():
+    if not os.path.isfile(LOCAL_LIST_PATH):
+        return None
+    terms = []
+    with open(LOCAL_LIST_PATH, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
                 continue
-            path = os.path.join(base, name)
-            rel = os.path.relpath(path, APP).replace("\\", "/")
-            if rel.startswith(("验证输出/", "整理输出/", "dist/", "build/", "src/_data/")):
-                continue
-            yield path, rel
+            terms.append(line.lower())
+    return terms
+
+
+def scan_patterns(local_secrets):
+    hard, mail, path, phone = [], [], [], []
+    secrets = local_secrets or []
+    for rel in tracked_files():
+        if rel.replace("\\", "/") == LOCAL_LIST.replace("\\", "/"):
+            continue
+        if not rel.lower().endswith(TEXT_EXT):
+            continue
+        text = read_text(rel)
+        if text is None:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            low = line.lower()
+            for s in secrets:
+                if s and s in low:
+                    hard.append(f"{rel}:{i}")
+                    break
+            for m in re.finditer(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", line):
+                addr = m.group(0)
+                if not any(a in addr for a in MAIL_ALLOW):
+                    mail.append(f"{rel}:{i}")
+            for rx in PATH_RES:
+                for m in rx.finditer(line):
+                    seg = m.group(1)
+                    if seg in PATH_PLACEHOLDERS or seg.startswith(("<", "{", "$", "…")):
+                        continue
+                    path.append(f"{rel}:{i}")
+            for m in re.finditer(r"(?<![\d.])1[3-9]\d{9}(?![\d.])", line):
+                phone.append(f"{rel}:{i}")
+    return hard, mail, path, phone
 
 
 def main():
-    needles = load_needles()
-    if not needles:
-        print(f"FAIL  敏感词名单为空或不存在：{LIST}")
-        print("      先复制 tests/public_safe.local.example.txt 再按本机情况填写")
-        return 1
+    files = tracked_files()
+    local_secrets = load_local_secrets()
+    if local_secrets is None:
+        check("已配置本机敏感词名单", False, f"缺少 {LOCAL_LIST}（可复制 tests/public_safe.local.example.txt）")
+    elif not local_secrets:
+        check("已配置本机敏感词名单", False, f"{LOCAL_LIST} 是空的，请写入要拦截的字面量")
+    else:
+        check("已配置本机敏感词名单", True, f"{len(local_secrets)} 条（名单本身不进 Git）")
 
-    hits = []
-    scanned = 0
-    for path, rel in iter_files():
-        if os.path.basename(path) == os.path.basename(LIST):
-            continue
-        try:
-            text = open(path, encoding="utf-8", errors="strict").read()
-        except (UnicodeDecodeError, OSError):
-            continue
-        scanned += 1
-        low = text.lower()
-        for n in needles:
-            if n.lower() in low:
-                for i, line in enumerate(text.splitlines(), 1):
-                    if n.lower() in line.lower():
-                        hits.append((rel, i, n))
-                        break
+    hard, mail, path, phone = scan_patterns(local_secrets)
 
-    print(f"扫描文件 {scanned} 个 · 敏感词 {len(needles)} 条")
-    if hits:
-        print(f"FAIL  命中 {len(hits)} 处：")
-        for rel, line, needle in hits[:20]:
-            print(f"      {rel}:{line}  含「{needle}」")
+    check("仓库里没有本机名单中的字面量", not hard, f"{len(hard)} 处 · {hard[:3]}")
+    check("没有非白名单邮箱", not mail, f"{len(mail)} 处 · {mail[:3]}")
+    check("没有带真实用户名的绝对路径", not path, f"{len(path)} 处 · {path[:3]}")
+    check("没有手机号", not phone, f"{len(phone)} 处 · {phone[:3]}")
+
+    bad_tracked = [f for f in files
+                   if f.startswith("验证输出/") or f.startswith("整理输出/")
+                   or f.startswith("src/_data/") or f.startswith("build/pyi-dist/")
+                   or f.startswith("build/vendor/")
+                   or "__pycache__" in f or f.endswith(".pyc")
+                   or (f.startswith("dist/") and f.lower().endswith((".exe", ".zip")))]
+    check("构建产物与验证输出未被跟踪", not bad_tracked,
+          f"{len(bad_tracked)} 个 · {bad_tracked[:3]}")
+
+    tracked_local = [f for f in files if f.replace("\\", "/") == LOCAL_LIST.replace("\\", "/")]
+    check("本机敏感词名单未被跟踪", not tracked_local,
+          ("请从暂存区撤出 " + LOCAL_LIST) if tracked_local else "")
+
+    commits = [l for l in git("log", "--format=%h %ae %ce", "HEAD").splitlines() if l.strip()]
+    bad_mail = [c.split()[0] for c in commits
+                if not all("@users.noreply.github.com" in part
+                           for part in c.split()[1:])]
+    check("所有提交作者都是 GitHub noreply", not bad_mail,
+          f"{len(bad_mail)} 个 · {bad_mail[:3]}")
+
+    tags = [t for t in git("tag", "-l").splitlines() if t.strip()]
+    orphan = []
+    for t in tags:
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", t, "HEAD"], cwd=ROOT)
+        if r.returncode != 0:
+            orphan.append(t)
+    check("所有标签都在当前历史内", not orphan, f"孤儿 tag {orphan}" if orphan else "")
+
+    failed = [n for n, ok in results if not ok]
+    print(f"\n合计 {len(results)} 项 · 失败 {len(failed)} · 跟踪文件 {len(files)} 个")
+    if failed:
+        print("→ 未通过，禁止上传。修完再跑一次。")
         return 1
-    print("PASS  源码与文档中没有本机个人字面量")
+    print("→ 通过：可以上传。")
     return 0
 
 

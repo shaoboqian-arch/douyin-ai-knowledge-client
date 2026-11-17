@@ -23,11 +23,10 @@ def candidate_project_dirs(extra=None):
     """按可信度排序的项目目录候选（去重、只保留真实存在的）。"""
     home = os.path.expanduser("~")
     pats = [
-        os.path.join(home, ".zcode", "workspace", "*", "TikTokDownloader"),
-        os.path.join(home, "zcode", "workspace", "*", "TikTokDownloader"),
         os.path.join(home, "Desktop", "TikTokDownloader"),
+        os.path.join(home, "桌面", "TikTokDownloader"),
         os.path.join(home, "Documents", "TikTokDownloader"),
-        r"G:\douyin\TikTokDownloader",
+        os.path.join(home, "文档", "TikTokDownloader"),
     ]
     found = []
     for p in [extra] if extra else []:
