@@ -179,7 +179,8 @@ def scan_public_copy(version):
     problems = []
     if not version:
         return ["读不到 VERSION"]
-    stale = ("_导出说明.txt", "_待加工.csv", "_导出清单.csv", "开始整理", "同步整理")
+    stale = ("_导出说明.txt", "_待加工.csv", "_导出清单.csv", "开始整理", "同步整理",
+             "约 25 分钟")
     user_docs = ("README.md", "dist/README.md", "build/README.template.md",
                  "src/installer.py", "build/build.py")
     for rel in user_docs:
@@ -194,7 +195,7 @@ def scan_public_copy(version):
         "README.md": (f"version-V{version}-", f"Setup-V{version}"),
         "dist/README.md": (f"# 抖音收藏整理 V{version}", "dy_report"),
         "build/README.template.md": ("V{VERSION}", "dy_report"),
-        "build/build.py": ("dy_report", "《导出报告.md》"),
+        "build/build.py": ("dy_report", "《导出报告.md》", "每条收藏约 1 秒"),
         "docs/工程说明.md": (f"# 抖音收藏整理 · V{version}", "15/15 PASS"),
     }
     for rel, needles in checks.items():

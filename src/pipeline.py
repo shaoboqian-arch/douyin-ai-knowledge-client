@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """跑基线脚本：逐行读输出、同步写日志文件、支持中止。
 
-抖音项目的采集脚本要跑约 25 分钟，所以这里必须流式读（不能等进程结束再读），
-并且日志要落盘 —— 界面关掉之后还能看到这一轮到底跑到哪一页。
+抖音项目的采集脚本用时随收藏数等比（大库要跑几十分钟），所以这里必须流式读
+（不能等进程结束再读），并且日志要落盘 —— 界面关掉之后还能看到这一轮到底跑到哪一页。
 """
 import os
 import re
@@ -114,14 +114,19 @@ def scan_stdout(lines):
     账号标识认几种写法（sec_uid: / sec_uid= / secUid / JSON 片段），
     昵称取标识之前的文字；解析不到标识时返回空串，调用方必须中止，
     不能因为「没解析到」就当作账号一致。
+    自述行（[self-profile] / 含「账号:」）优先：一旦认出自述行，日志里
+    其余带 sec_uid 字样的杂行不再覆盖——杂行（如逐条作品的日志）会把
+    账号改成别的值，让硬门误中止；没有自述行时才用第一条杂行兜底。
     """
     account = {"nickname": "", "sec_uid": ""}
     total = None
     pages = 0
+    from_profile = False
     for line in lines:
         s = line.strip()
         m = _SEC_RE.search(s)
-        if m:
+        is_profile = s.startswith("[self-profile]") or "账号:" in s
+        if m and (is_profile or not from_profile):
             account["sec_uid"] = m.group(1).strip().strip("'\"")
             head = s[:m.start()]
             if "账号:" in head:
@@ -132,6 +137,7 @@ def scan_stdout(lines):
                 account["nickname"] = nick.group(1)
             else:
                 account["nickname"] = head.strip(" :：,，\"'[]{}-")
+            from_profile = from_profile or is_profile
         elif s.startswith("[self-profile] 账号:"):
             body = s.split("账号:", 1)[1].strip()
             # 标识写了但值为空：昵称仍要认出来，sec_uid 保持空串由硬门拦住。

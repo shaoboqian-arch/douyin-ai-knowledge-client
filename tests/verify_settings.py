@@ -47,12 +47,9 @@ def main():
     check("项目目录落盘", cfg["project_dir"] == project)
     check("账号落盘", cfg["expect_sec_uid"] == _fixture.SEC)
     check("没有 cookie 字段", "cookie" not in cfg, str(list(cfg)))
-    cfg2 = config.load()
-    cfg2["min_count"] = "12"
-    config.save(cfg2)
-    check("条数下限转成整数", config.load()["min_count"] == 12)
-    cfg2["min_count"] = 1
-    config.save(cfg2)
+    check("条数下限字段已移除", "min_count" not in cfg, str(list(cfg)))
+    config.save(cfg)
+    check("配置往返可保存", config.load()["project_dir"] == project)
 
     print("== MCP 配置合并 ==")
     mcp_path = os.path.join(tmp, "mcp.json")

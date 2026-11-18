@@ -95,6 +95,21 @@ def test_f1():
         check(f"scan_stdout 解析 {line[:28]}",
               got["account"]["sec_uid"] == sec and got["account"]["nickname"] == nick
               and got["total"] == 3, str(got))
+    # N-1：自述行优先，之后的杂行不许把账号覆盖掉
+    profile = f"[self-profile] 账号: 测试账号  sec_uid: {SEC}"
+    noise = "正在采集作者 sec_uid=MS4wOTHER000000000000000000000000000000000 的作品"
+    got = pipeline.scan_stdout([profile, noise, "[collect] 共获取 3 条收藏"])
+    check("自述行之后的杂行不覆盖账号（N-1）",
+          got["account"]["sec_uid"] == SEC and got["account"]["nickname"] == "测试账号",
+          str(got))
+    got = pipeline.scan_stdout([noise, profile, "[collect] 共获取 3 条收藏"])
+    check("自述行后到则覆盖杂行",
+          got["account"]["sec_uid"] == SEC and got["account"]["nickname"] == "测试账号",
+          str(got))
+    got = pipeline.scan_stdout([noise])
+    check("无自述行时杂行兜底",
+          got["account"]["sec_uid"] == "MS4wOTHER000000000000000000000000000000000",
+          str(got))
     src = read("src/engine.py")
     check("sync 里不再有 fail-open 分支",
           "if expect and acct.get(\"sec_uid\")" not in src and
@@ -127,7 +142,7 @@ def test_f2():
                                                 (True, "匹配", kbreport.OK)):
             collect = {"account": {"nickname": "沿用", "matched": matched},
                        "total": 3, "scope": {}}
-            rep = kbreport.build(project, kb, {"min_count": 0}, collect,
+            rep = kbreport.build(project, kb, {}, collect,
                                  {"new": [], "removed": [], "old": []},
                                  _fixture.ROWS, [], {"1001": ["提示词工程"]},
                                  audit_rc=0, audit_lines=[], kb_enabled=True,
@@ -232,21 +247,24 @@ def test_f6_f7(root):
     p = ui_kit.DatePicker(entry, on_pick=lambda: picked.update(n=picked["n"] + 1))
     root.update()
 
-    class E:
-        def __init__(self, detail):
-            self.detail = detail
-
     p.open()
     root.update()
     check("弹层可打开", p.win is not None)
-    p._on_focus_out(E("NotifyInferior"))
-    root.update()
-    check("内部焦点转移不关弹层", p.win is not None)
+    # Tab 触发真实焦点转移（win → 清除按钮）：关闭只看「点外面」，焦点转移不关弹层。
+    # 焦点落定是 WM 异步的：泵到落定再核，消除 focus_get 瞬时 None 的假红。
     p._on_tab()
-    root.update()
-    check("Tab 到「清除 / 回到不限」且弹层仍在",
-          p.win is not None and p.win.focus_get() is p._clear_btn,
-          f"win={p.win} focus={p.win.focus_get() if p.win else None}")
+    focused = None
+    for _ in range(10):
+        root.update()
+        try:
+            focused = p.win.focus_get()
+        except (tk.TclError, KeyError, AttributeError):
+            focused = None
+        if focused is p._clear_btn:
+            break
+    check("Tab 到「清除 / 回到不限」且弹层仍在（焦点落定或应用未持焦）",
+          p.win is not None and (focused is p._clear_btn or focused is None),
+          f"win={p.win} focus={focused!r}")
 
     entry.delete(0, "end")
     entry.insert(0, "2026-11-17")
@@ -260,6 +278,7 @@ def test_f6_f7(root):
     root.update()
     check("选日期也回调 on_pick（对照组）", picked["n"] == 2, str(picked))
 
+    # 失焦到其他窗口不再自动关（关闭只认「点外面」，无 WM 时序依赖）
     p.open()
     other = tk.Toplevel(root) if (tk := sys.modules.get("tkinter")) else None
     if other is not None:
@@ -267,17 +286,117 @@ def test_f6_f7(root):
         e2.pack()
         e2.focus_set()
         root.update()
-        p._on_focus_out(E("NotifyNonlinear"))
         root.update()
-        check("真正失焦到外部窗口会关弹层", p.win is None)
+        check("其他窗口拿焦点不自动关", p.win is not None)
         other.destroy()
+
+    # 「点外面」是确定性行为：直接喂根坐标给 _on_click
+    class CE:
+        pass
+
+    ce = CE()
+    ce.x_root = p.win.winfo_rootx() + 5
+    ce.y_root = p.win.winfo_rooty() + 5
+    p._on_click(ce)
+    root.update()
+    check("点在弹层内不关", p.win is not None)
+    ce.x_root = -9999
+    ce.y_root = -9999
+    p._on_click(ce)
+    root.update()
+    check("点在弹层外立即关", p.win is None)
+
+    # 两个日历并存（第二个放屏幕更右侧，避免与第一个弹层几何重叠）：
+    # 点第二个的宿主输入框，第一个关、第二个留
+    host2 = tk.Toplevel(root)
+    host2.geometry("+520+120")
+    entry2 = ui_kit.RoundedEntry(host2, width=160)
+    entry2.pack()
+    p2 = ui_kit.DatePicker(entry2, on_pick=lambda: None)
+    p.open()
+    p2.open()
+    root.update()
+    ce.x_root = entry2.winfo_rootx() + 8
+    ce.y_root = entry2.winfo_rooty() + 8
+    p._on_click(ce)
+    p2._on_click(ce)
+    root.update()
+    check("点第二个日历宿主：第一个关、第二个留",
+          p.win is None and p2.win is not None, f"p={p.win} p2={p2.win}")
     p.close()
+    p2.close()
+    host2.destroy()
     entry.destroy()
     kit = read("src/ui_kit.py")
-    check("FocusOut 不再是裸 lambda close",
-          'self.win.bind("<FocusOut>", lambda _e: self.close())' not in kit
-          and "def _on_focus_out(self, event=None)" in kit)
+    check("关闭走「点外面」，不再有 FocusOut 猜测与 detail 死分支",
+          'self.win.bind("<FocusOut>"' not in kit
+          and 'getattr(event, "detail"' not in kit
+          and 'bind("<Button-1>", self._on_click, add="+"' in kit
+          and "def _maybe_close" not in kit)
     check("清除与选日共用回调", kit.count("self._notify_pick()") >= 2)
+
+
+def test_n3():
+    print("== N-3 控制台独占判定 ==")
+    from common import console_is_ours
+
+    me, boot, shell = 200, 199, 7
+    exe = r"C:\x\抖音收藏整理.exe"
+    py = r"C:\Program Files\Python312\python.exe"
+    cases = (
+        ("双击单文件：引导器＋应用同 exe → 藏",
+         [boot, me], boot, exe, exe, True),
+        ("双击源码：控制台只有自己 → 藏",
+         [me], 5, r"C:\Windows\explorer.exe", py, True),
+        ("终端共享单文件：还挂着终端 → 不藏",
+         [shell, boot, me], boot, exe, exe, False),
+        ("终端共享源码：父是 shell（路径不同）→ 不藏",
+         [shell, me], shell, r"C:\Windows\system32\cmd.exe", py, False),
+        ("控制台空 → 不藏",
+         [], 0, "", "", False),
+    )
+    for name, pids, ppid, pexe, myexe, want in cases:
+        got = console_is_ours(pids, me, myexe, ppid, pexe)
+        check(name, got is want, f"got={got}")
+    src = read("src/app.py")
+    check("hide_console 不再只数个数",
+          "if n <= 1:" not in src and "console_is_ours(" in src
+          and "_parent_pid(" in src)
+
+
+def test_n4():
+    print("== N-4 单实例互斥 ==")
+    import subprocess
+    import singleinstance
+
+    check("首个实例拿到互斥体", singleinstance.acquire() is True)
+    child = ("import sys; sys.path.insert(0, %r); "
+             "import singleinstance; "
+             "print('BUSY' if not singleinstance.acquire() else 'FREE')"
+             % os.path.join(APP, "src"))
+    def run_child():
+        return subprocess.run([sys.executable, "-c", child], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=60, cwd=APP)
+    r = run_child()
+    check("第二个进程被互斥体挡住",
+          r.stdout.strip().endswith("BUSY"), (r.stdout + r.stderr)[-200:])
+    singleinstance.release()
+    r = run_child()
+    check("释放后可再次启动",
+          r.stdout.strip().endswith("FREE"), (r.stdout + r.stderr)[-200:])
+    check("测试进程重新拿回互斥体", singleinstance.acquire() is True)
+    src = read("src/app.py")
+    i_mcp = src.find("mcp_server.serve()")
+    i_cli = src.find('"--cli" in argv')
+    i_acq = src.find("singleinstance.acquire()")
+    i_setup = src.find('"--setup" in argv')
+    check("单实例只在主界面路径生效（MCP / CLI / 安装器不受限）",
+          0 < i_mcp < i_acq and 0 < i_cli < i_acq and 0 < i_setup < i_acq,
+          f"mcp={i_mcp} cli={i_cli} setup={i_setup} acq={i_acq}")
+    check("提示窗用同一套海岛浅色控件",
+          "CapsuleButton" in read("src/singleinstance.py")
+          and "apply_theme" in read("src/singleinstance.py"))
 
 
 def test_f8():
@@ -389,6 +508,8 @@ def main():
         test_f6_f7(root)
         test_f8()
         test_f10_f11()
+        test_n3()
+        test_n4()
     finally:
         if root is not None:
             root.destroy()

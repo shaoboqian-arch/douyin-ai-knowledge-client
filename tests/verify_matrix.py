@@ -121,25 +121,17 @@ def main():
             r4.get("batch_path", ""), manifest.REPORT_NAME)))
 
         os.environ["FAKE_SEC"] = _fixture.SEC
+        print("== 条数下限已移除（2026-11-18 裁决）：低条数不再拦截 ==")
         os.environ["FAKE_COUNT"] = "3"
-        cfg = config.load()
-        cfg["min_count"] = 10
-        config.save(cfg)
         r5 = engine.sync(os.path.join(tmp, "out4"))
-        check("条数低于下限被拒", not r5.get("ok") and "条数异常" in r5.get("error", ""),
-              r5.get("error", ""))
-        check("条数异常时不写交付清单", not os.path.isfile(os.path.join(
-            r5.get("batch_path", ""), manifest.REPORT_NAME)))
+        check("低条数不再拦截、照常交付",
+              r5.get("ok") and r5.get("collect_total") == 3, str(r5)[:200])
 
         print("== 续跑 ==")
         r6 = engine.retry(r4.get("batch_path", ""))
         check("采集阶段失败不给续跑", not r6.get("ok") and "采集阶段" in r6.get("error", ""),
               r6.get("error", ""))
-        r7 = engine.retry(r5.get("batch_path", ""))
-        check("条数失败也不给续跑", not r7.get("ok"))
 
-        cfg["min_count"] = 1
-        config.save(cfg)
         os.environ["FAKE_COUNT"] = "5"
         os.environ["FAKE_AUDIT_RC"] = "1"
         r8 = engine.sync(os.path.join(tmp, "out5"))
@@ -152,6 +144,52 @@ def main():
         check("续跑落到新批次", r9.get("batch_path") != r8.get("batch_path"))
         check("续跑记录来源批次", engine.read_state(r9["batch_path"]).get("resumed_from")
               == r8.get("batch_path"))
+
+        print("== 项目锁：与每周增量编排互斥 ==")
+        import ctypes
+        name = engine._project_mutex_name(project, "weekly")
+        k32 = ctypes.windll.kernel32
+        hold = k32.CreateMutexW(None, True, name)
+        rl = engine.sync(os.path.join(tmp, "out-lock"))
+        check("每周任务持锁时全仓同步被挡",
+              not rl.get("ok") and "每周增量" in rl.get("error", ""), rl.get("error", ""))
+        check("被挡时不创建批次目录", not os.path.isdir(rl.get("batch_path") or ""))
+        k32.CloseHandle(hold)
+        rl2 = engine.sync(os.path.join(tmp, "out-lock2"), "2026-10-01", "2026-11-30")
+        check("对方释放后恢复可跑", rl2.get("ok"), str(rl2)[:200])
+        check("同步结束互斥体已释放",
+              not engine._mutex_open(engine._project_mutex_name(project, "client")))
+
+        print("== 项目锁：重入与异常路径 ==")
+        lk1 = engine.ProjectLock(project, "client")
+        check("首次加锁成功", lk1.acquire() == "")
+        lk2 = engine.ProjectLock(project, "client")
+        check("同进程重复加锁被挡", "已在跑另一轮" in lk2.acquire())
+        rl3 = engine.sync(os.path.join(tmp, "out-lock3"))
+        check("本进程持锁时同步直接中止，不建批次",
+              not rl3.get("ok") and "已在跑另一轮" in rl3.get("error", "")
+              and not os.path.isdir(rl3.get("batch_path") or ""), rl3.get("error", ""))
+        lk1.release()
+        check("释放后互斥体消失",
+              not engine._mutex_open(engine._project_mutex_name(project, "client")))
+
+        orig_run = engine.pipeline.run_script
+
+        def _boom(*a, **kw):
+            raise RuntimeError("模拟未预期异常")
+
+        engine.pipeline.run_script = _boom
+        try:
+            raised = ""
+            try:
+                engine.sync(os.path.join(tmp, "out-lock4"))
+            except RuntimeError as e:
+                raised = str(e)
+            check("未预期异常照旧向上抛（由调用层兜底）", "模拟未预期异常" in raised, raised)
+        finally:
+            engine.pipeline.run_script = orig_run
+        check("异常路径也已释放项目锁（finally 兜底）",
+              not engine._mutex_open(engine._project_mutex_name(project, "client")))
 
         print("== 空批次保护 ==")
         import manifest as mf

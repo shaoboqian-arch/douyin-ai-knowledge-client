@@ -79,17 +79,6 @@ class Settings:
         self._btn(src, 2, "重新校验", self.reverify, width=84, col=3, padx=(8, 0))
         self._hint(src, 3, "采集后核对 sec_uid；不一致会中止，不重建知识库")
 
-        self._label(src, 4, "条数下限")
-        count_row = tk.Frame(src, bg=CARD)
-        count_row.grid(row=4, column=1, sticky="w", padx=(14, 8), pady=(0, 2))
-        self.min_count = RoundedEntry(count_row, font=self.font_main, width=8,
-                                      pxwidth=140, panel_bg=CARD)
-        self.min_count.pack(side="left")
-        self.min_count.insert(0, str(self.cfg.get("min_count", 0)))
-        tk.Label(count_row, text="条", font=self.font_main, bg=CARD, fg=MUTED).pack(
-            side="left", padx=(8, 0))
-        self._hint(src, 5, "低于此数视为账号异常并中止")
-
         # ---- 知识库
         kb_card, kb = _card(f, "知识库", (family, 11, "bold"), self.font_small, "可选")
         kb_card.grid(row=3, column=0, sticky="ew", pady=(14, 0))
@@ -374,13 +363,8 @@ class Settings:
         setup_env.open(self.root, on_done=self.reload)
 
     def _dirty(self):
-        try:
-            mn = int(self.min_count.get().strip() or 0)
-        except ValueError:
-            return True
         return (self.project.get().strip() != (self.cfg.get("project_dir") or "")
                 or self.kb.get().strip() != (self.cfg.get("kb_dir") or "")
-                or mn != int(self.cfg.get("min_count") or 0)
                 or bool(self.kb_switch.get()) != bool(self.cfg.get("kb_enabled", True)))
 
     def close(self):
@@ -397,11 +381,6 @@ class Settings:
     def save(self):
         project = self.project.get().strip()
         kb = self.kb.get().strip()
-        try:
-            mn = int(self.min_count.get().strip() or 0)
-        except ValueError:
-            self.set_state("条数下限必须是整数", ERR)
-            return
         if not detect.is_project_dir(project):
             self.set_state("项目目录里没有 extract_favorites.py", ERR)
             return
@@ -419,7 +398,7 @@ class Settings:
                 self.set_state(f"知识库不可用：{kb_err}", ERR)
                 return
         self.cfg.update(project_dir=project, python=py, kb_dir=kb,
-                        min_count=max(0, mn), kb_enabled=bool(want_kb),
+                        kb_enabled=bool(want_kb),
                         obsidian_exe=detect.find_obsidian(self.cfg.get("obsidian_exe", "")))
         config.save(self.cfg)
         if self.on_done:

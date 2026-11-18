@@ -7,10 +7,13 @@
   · 关键门禁在引擎里，不依赖界面：账号不符、条数骤降都在这里中止
 """
 import datetime as dt
+import ctypes
+import hashlib
 import json
 import os
 import shutil
 import threading
+import time
 import traceback
 
 import config
@@ -132,6 +135,96 @@ def load_concepts(project_dir):
         return {}
 
 
+# ---------------- 项目锁：与「每周增量入库」编排互斥（两条编排写同一套项目文件）
+# 协议：谁要动项目，谁持有命名互斥体 Local\douyin-fav-sync.<client|weekly>.<项目哈希>；
+# 开跑前先查对方的锁，活跃即中止让路。互斥体随进程退出自动释放，无残留文件。
+def _project_mutex_name(project, kind):
+    """互斥体名：Local\\douyin-fav-sync.<kind>.<哈希>（哈希 = 规范化项目路径 sha256 前 12 位）。"""
+    try:
+        path = os.path.abspath(os.path.normpath(str(project or "").strip()))
+    except (OSError, ValueError):
+        return ""
+    if not path or not str(project or "").strip():
+        return ""
+    h = hashlib.sha256(os.path.normcase(path).encode("utf-8", "replace")).hexdigest()[:12]
+    return f"Local\\douyin-fav-sync.{kind}.{h}"
+
+
+def _mutex_open(name):
+    """互斥体对象是否存在（= 对方是否持锁）。只查存在，不等待、不取所有权。"""
+    if not name or os.name != "nt":
+        return False
+    k32 = ctypes.windll.kernel32
+    for access in (0x1F0001, 0x00100001):   # MUTEX_ALL_ACCESS → SYNCHRONIZE|MUTEX_QUERY_STATE
+        handle = k32.OpenMutexW(access, False, name)
+        if handle:
+            k32.CloseHandle(handle)
+            return True
+    return False
+
+
+def _weekly_lock_check(project):
+    if _mutex_open(_project_mutex_name(project, "weekly")):
+        return ("检测到每周增量任务正在运行（项目互斥体活跃）；两条编排并发写"
+                "同一知识库会互相覆盖，本轮中止，等它结束后再试。")
+    return ""
+
+
+class ProjectLock:
+    """项目写锁：同一项目同一时刻只允许一条编排动它。
+
+    · `acquire()` 返回 `""` = 拿到；否则返回人话原因，调用方直接中止并原样提示。
+    · `release()` 幂等；调用方用 `try/finally` 包住整段编排，异常路径也不会漏放。
+    · 同进程重复 acquire 同一项目立即被挡（系统互斥体对同线程是同名递归成功，
+      不能靠它判重入，另用进程内集合记账）。
+    """
+
+    _held = set()
+
+    def __init__(self, project, kind="client"):
+        self.name = _project_mutex_name(project, kind)
+        self.handle = None
+        self._owned = False
+
+    def acquire(self):
+        if os.name != "nt":
+            return ""
+        if not self.name:
+            return ("项目路径无法规范化，拿不到项目锁；为避免两条编排并发写同一知识库，本轮中止。")
+        if self.name in ProjectLock._held:
+            return ("本程序已在跑另一轮整理（同一项目）；两条编排并发写同一知识库会互相覆盖，"
+                    "本轮中止，等它结束后再试。")
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = k32.CreateMutexW(None, False, self.name)
+        if not handle:
+            err = ctypes.get_last_error()
+            return f"无法创建项目互斥体（err={err}）；为避免并发覆盖同一知识库，本轮中止。"
+        self.handle = handle
+        self._owned = True
+        ProjectLock._held.add(self.name)
+        return ""
+
+    def release(self):
+        if not self._owned:
+            return
+        self._owned = False
+        ProjectLock._held.discard(self.name)
+        handle, self.handle = self.handle, None
+        if not handle:
+            return
+        try:
+            ctypes.windll.kernel32.CloseHandle(handle)
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+        return False
+
+
 # ---------------------------------------------------------------- 状态
 def status(project_dir=None, cfg=None):
     cfg = cfg or config.load()
@@ -203,7 +296,6 @@ def status(project_dir=None, cfg=None):
                      "exe": obsidian.get("exe", ""),
                      "vaults": obsidian.get("vaults") or [],
                      "message": obsidian.get("message", "")},
-        "min_count": int(cfg.get("min_count") or 0),
         "rows_ok": rows_ok, "rows_mtime": rows_mtime,
         "missing": missing, "warnings": warnings,
     }
@@ -272,7 +364,11 @@ def preflight(frm="", to="", project_dir=None):
 # ---------------------------------------------------------------- 整理
 def sync(dest, frm="", to="", on_event=None, on_progress=None, cancel=None,
          project_dir=None):
-    """采集 → 对比 → 重建 → 导出，写成一批交付。"""
+    """采集 → 对比 → 重建 → 导出，写成一批交付。
+
+    锁的范围就是这一整段：入口拿、`finally` 放（中途抛异常也不会漏放）；
+    拿到锁后先查「每周增量入库」是否在跑，活跃即中止让路。
+    """
     cfg = config.load()
     st = status(project_dir, cfg)
     if not st["ready"]:
@@ -289,6 +385,21 @@ def sync(dest, frm="", to="", on_event=None, on_progress=None, cancel=None,
     except OSError as e:
         return {"ok": False, "error": f"无法创建交付目录：{e}"}
 
+    lock_err = _weekly_lock_check(st["project_dir"])
+    if lock_err:
+        return {"ok": False, "error": lock_err}
+    lock = ProjectLock(st["project_dir"], "client")
+    lock_err = lock.acquire()
+    if lock_err:
+        return {"ok": False, "error": lock_err}
+    try:
+        return _sync_locked(dest, frm, to, cfg, st, on_event, on_progress, cancel)
+    finally:
+        lock.release()
+
+
+def _sync_locked(dest, frm, to, cfg, st, on_event, on_progress, cancel):
+    """`sync` 的正体：调用方已校验参数并持项目锁，这里只做编排。"""
     project = st["project_dir"]
     python = st["python"]
     batch = _unique_batch(dest, batch_label(frm, to))
@@ -394,10 +505,6 @@ def sync(dest, frm="", to="", on_event=None, on_progress=None, cancel=None,
     state["collect"] = {"code": r["code"], "elapsed": r["elapsed"], "pages": info.get("pages"),
                         "total": total}
     _write_state(batch, state)
-    if total < int(cfg.get("min_count") or 0):
-        return fail("collect",
-                    f"条数异常：本轮仅 {total} 条，低于下限 {cfg.get('min_count')}；"
-                    "已中止，未重建交付物。")
     state["collect"].update({
         "gates_ok": True,
         "account": {"nickname": acct.get("nickname", ""),
@@ -575,6 +682,7 @@ def retry(batch_path, on_event=None, on_progress=None, cancel=None):
 
     · 不原地改写旧批次：旧批次保留为证据，新批次名带 `-r2`、`-r3`，绝不覆盖。
     · 采集阶段就中止的批次不能靠续跑补救 —— 那需要重新采集，直接点「⚠️ 全仓同步」。
+    · 重建要动项目文件，所以与 `sync` 一样全程持项目锁（入口拿、`finally` 放）。
     """
     old = (batch_path or "").strip()
     state = read_state(old)
@@ -595,6 +703,21 @@ def retry(batch_path, on_event=None, on_progress=None, cancel=None):
     st = status(state.get("project_dir") or None, cfg)
     if not st["python_ok"]:
         return {"ok": False, "error": "项目解释器不可用"}
+    lock_err = _weekly_lock_check(st["project_dir"])
+    if lock_err:
+        return {"ok": False, "error": lock_err}
+    lock = ProjectLock(st["project_dir"], "client")
+    lock_err = lock.acquire()
+    if lock_err:
+        return {"ok": False, "error": lock_err}
+    try:
+        return _retry_locked(old, state, cfg, st, on_event, on_progress, cancel)
+    finally:
+        lock.release()
+
+
+def _retry_locked(old, state, cfg, st, on_event, on_progress, cancel):
+    """`retry` 的正体：调用方已校验旧批次并持项目锁。"""
     project, python = st["project_dir"], st["python"]
     rng = state.get("range") or {}
     dest = os.path.normpath(state.get("dest") or os.path.dirname(old))

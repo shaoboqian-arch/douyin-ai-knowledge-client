@@ -5,7 +5,7 @@ import queue
 import sys
 import threading
 
-VERSION = "0.1.6"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
+VERSION = "0.1.7"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
 APP_NAME = "抖音收藏整理"
 MCP_SERVER_NAME = "douyin-fav-sync"
 EXE_NAME = "抖音收藏整理.exe"
@@ -23,9 +23,6 @@ PHASES = (
     ("export", "导出"),
     ("done", "完成"),
 )
-
-DEFAULT_MIN_COUNT = 1000   # 账号硬校验的条数量级下限（可在设置里改）
-
 
 def is_frozen():
     return bool(getattr(sys, "frozen", False))
@@ -153,6 +150,26 @@ def pointer_inside(x, y, width, height):
     except (TypeError, ValueError):
         return False
     return 0 <= x <= width and 0 <= y <= height
+
+
+def console_is_ours(console_pids, my_pid, my_exe, parent_pid, parent_exe):
+    """控制台是否只属于本程序树（自身＋同一 exe 的父引导器）。
+
+    单文件 exe 双击启动：控制台上挂着自己和父引导器（同一 exe）→ 属于我们 → 藏；
+    从终端启动：控制台上还挂着终端/shell（exe 路径不同）→ 不属于 → 不藏，
+    否则会把用户的终端窗口一起藏掉。
+    判定用 exe 路径而不是进程数：onefile 是引导器＋应用双进程，只数个数
+    永远数出 2，是「黑窗藏不掉」的根因。
+    """
+    pids = {p for p in (console_pids or ()) if p}
+    if not pids:
+        return False
+    allowed = {my_pid}
+    if (parent_pid and parent_pid not in allowed and parent_exe
+            and my_exe
+            and os.path.normcase(parent_exe) == os.path.normcase(my_exe)):
+        allowed.add(parent_pid)
+    return pids <= allowed
 
 
 class DeferredCall:

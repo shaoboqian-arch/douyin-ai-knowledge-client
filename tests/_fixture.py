@@ -114,11 +114,11 @@ def make_project(tmp, kb=None, rows=None):
     return p, rows_path
 
 
-def configure(tmp, project, kb, sec=SEC, min_count=1, rows_path=None):
+def configure(tmp, project, kb, sec=SEC, rows_path=None):
     import config
     path = os.path.join(tmp, "settings.json")
     config.save({"project_dir": project, "python": os.sys.executable,
                  "kb_dir": kb, "expect_sec_uid": sec, "expect_nickname": "测试账号",
-                 "min_count": min_count, "dest": os.path.join(tmp, "out"),
+                 "dest": os.path.join(tmp, "out"),
                  "frm": "", "to": ""}, path)
     return path

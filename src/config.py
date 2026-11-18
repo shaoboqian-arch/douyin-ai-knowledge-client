@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""客户端设置：本机路径、账号、阈值。
+"""客户端设置：本机路径、账号。
 
 这些值全部可由「初始化本机环境」写入，也可以直接编辑 settings.json。
 这里**不保存也不复制**任何 Cookie —— Cookie 始终留在抖音项目自己的
 `Volume/settings.json` 里，客户端只读它是否存在。
+条数下限门禁已移除（2026-11-18 裁决）：分发场景无法预知用户收藏量级，
+固定下限会误伤小库用户；部分采集的风险由《导出报告》的新增 / 取消差集揭示。
 """
 import json
 import os
 
-from common import DEFAULT_MIN_COUNT, settings_path
+from common import settings_path
 
 DEFAULTS = {
     "project_dir": "",      # TikTokDownloader 工作目录（含 extract_favorites.py 与 .venv）
@@ -18,7 +20,6 @@ DEFAULTS = {
     "obsidian_exe": "",     # Obsidian 主程序；空 = 自动检测
     "expect_sec_uid": "",   # 账号硬校验用：必须是这个账号
     "expect_nickname": "",
-    "min_count": DEFAULT_MIN_COUNT,
     "dest": "",             # 默认交付目录
     "frm": "",              # 上次发布时间范围（空 = 全部）
     "to": "",
@@ -49,10 +50,6 @@ def load(path=None):
                 data[k] = raw[k].strip().lower() not in ("0", "false", "no", "off", "")
         elif isinstance(raw[k], (str, int, float)):
             data[k] = raw[k]
-    try:
-        data["min_count"] = int(data.get("min_count") or DEFAULT_MIN_COUNT)
-    except (TypeError, ValueError):
-        data["min_count"] = DEFAULT_MIN_COUNT
     return data
 
 

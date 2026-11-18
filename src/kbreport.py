@@ -101,7 +101,6 @@ def build(project, kb_dir, cfg, collect, ids, rows, prev_rows, concepts_map,
     # 身份与条数
     acct = (collect or {}).get("account") or {}
     total = int((collect or {}).get("total") or len(rows))
-    min_count = int(cfg.get("min_count") or 0)
     matched = bool(acct.get("matched"))
     if mode == "retry":
         who = acct.get("nickname") or "（沿用本轮采集）"
@@ -115,8 +114,6 @@ def build(project, kb_dir, cfg, collect, ids, rows, prev_rows, concepts_map,
             identity_state = WARN
     elif matched:
         identity = f"{acct.get('nickname') or '（未取到昵称）'}（sec_uid 匹配），采集 {total} 条"
-        if min_count:
-            identity += f"（≥{min_count} 达标）"
         identity_state = OK
     else:
         identity = f"{acct.get('nickname') or '未知'}（sec_uid 未匹配），采集 {total} 条"

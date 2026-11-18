@@ -984,7 +984,7 @@ else:
 
 
     class DatePicker:
-        """日历弹层，选中后把 YYYY-MM-DD 写回输入框；Esc 只关日历。
+        """日历弹层，选中后把 YYYY-MM-DD 写回输入框；点弹层外或 Esc 关闭。
 
         embedded=True 时把「▾」收进圆角输入框尾部，不再单独占一列。
         翻月是同方向滑入滑出（约 220ms，可打断），星期行和左右键不动。
@@ -999,6 +999,8 @@ else:
             self.win = None
             self._trigger = None
             self._slide_job = None
+            self._root = None
+            self._root_click_id = None
             self._pages = []
             if embedded:
                 self._embed()
@@ -1021,6 +1023,12 @@ else:
 
         def close(self):
             self._cancel_slide()
+            try:
+                if self._root is not None and self._root_click_id:
+                    self._root.unbind("<Button-1>", self._root_click_id)
+            except (tk.TclError, KeyError, ValueError):
+                pass
+            self._root_click_id = None
             if self.win is not None:
                 try:
                     self.win.destroy()
@@ -1061,35 +1069,38 @@ else:
             self.win.update_idletasks()
             self._show_month(self._year, self._month, animate=False)
             # 焦点在弹层内部移动（Tab 到「清除」）不能关窗；外部失焦才关（F-6）。
-            self.win.bind("<FocusOut>", self._on_focus_out)
             self.win.bind("<Tab>", self._on_tab)
             self.win.bind("<Escape>", self._on_escape)
+            # 点弹层外的任何地方就关：在应用根窗口挂 Button-1（bindtags 保证
+            # 只抓主窗口里的点击，弹层自己的点击不会进这里）。
+            # 不用 FocusOut 猜「焦点去哪了」——WM 焦点抖动会让它时灵时不灵。
+            self._root = widget
+            try:
+                self._root_click_id = self._root.bind("<Button-1>", self._on_click, add="+")
+            except (tk.TclError, AttributeError):
+                self._root_click_id = None
             self.win.focus_set()
 
-        def _on_focus_out(self, event=None):
-            detail = str(getattr(event, "detail", "") or "")
-            if "Inferior" in detail:               # 焦点在同一弹层内部转移
-                return
-            try:
-                self.win.after_idle(self._maybe_close)
-            except (tk.TclError, AttributeError):
-                pass
+        def _on_click(self, event=None):
+            """应用根窗口上的 Button-1：点到弹层外就关。
 
-        def _maybe_close(self):
-            if self.win is None:
+            点在弹层自己的控件上不会进这里（bindtags 走弹层 toplevel）；
+            点在宿主输入框（含「▾」）上也算还在控件里，开/关交给触发器自己。
+            """
+            if self.win is None or event is None:
                 return
             try:
-                f = self.win.focus_get()
-            except (tk.TclError, KeyError, AttributeError):
-                f = None
-            if f is not None:
-                w = f
-                while w is not None:
-                    if w is self.win:
-                        return                     # 新焦点仍在弹层里
-                    parent = getattr(w, "master", None)
-                    w = None if parent is w else parent
-            self.close()
+                x, y = event.x_root, event.y_root
+                wx, wy = self.win.winfo_rootx(), self.win.winfo_rooty()
+                ww, wh = self.win.winfo_width(), self.win.winfo_height()
+                ex, ey = self.entry.winfo_rootx(), self.entry.winfo_rooty()
+                ew, eh = self.entry.winfo_width(), self.entry.winfo_height()
+            except (tk.TclError, AttributeError):
+                return
+            if ex <= x < ex + ew and ey <= y < ey + eh:
+                return
+            if not (wx <= x < wx + ww and wy <= y < wy + wh):
+                self.close()
 
         def _on_tab(self, _e=None):
             """弹层里唯一可聚焦的动作是「清除」，Tab 直接送过去。"""

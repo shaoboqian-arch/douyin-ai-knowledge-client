@@ -127,7 +127,8 @@ class App:
                                  primary=True, width=118, height=32,
                                  font=(family, 10, "bold"))
         self.btn.grid(row=0, column=1, sticky="e", padx=(0, 8))
-        Tooltip(self.btn, lambda: "全量采集全部收藏后重建知识库，再导出所选范围；约 25 分钟",
+        Tooltip(self.btn, lambda: "必做的一次全收藏扫描：扫完重建知识库，再导出所选范围；"
+                                  "每条收藏约 1 秒，用时随收藏数等比变化",
                 font=font_small)
         CapsuleButton(head, text="设置", command=self.open_settings, width=72,
                       height=32, font=font_small).grid(row=0, column=2, sticky="e")
@@ -180,7 +181,7 @@ class App:
                              padx=(14, 10), pady=(6, 0))
 
         self.first_hint = tk.Label(
-            f, text="首次使用：先做一次「全仓同步」（约 25 分钟）\n"
+            f, text="首次使用：先做一次「全仓同步」（必做的全收藏扫描，每条约 1 秒）\n"
                     "完成后「仅导出」才可用",
             font=font_small, bg=BG, fg=WARN, anchor="w", justify="left")
         self.first_hint.grid(row=3, column=0, sticky="ew", pady=(10, 0))
@@ -667,7 +668,7 @@ class App:
         return messagebox.askyesno(
             "范围内没有条目",
             f"所选作品发布日期范围内 0 条。\n\n"
-            f"「⚠️ 全仓同步」仍会先采集全部收藏（约 25 分钟）、重建知识库，"
+            f"「⚠️ 全仓同步」仍会先扫描全部收藏（每条约 1 秒）、重建知识库，"
             f"最后写出一份没有明细的《导出报告》。\n"
             f"仍要继续吗？",
             parent=self.root)
