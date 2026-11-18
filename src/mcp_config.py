@@ -15,6 +15,9 @@ from common import MCP_SERVER_NAME, VERSION, is_frozen, src_dir
 
 DESCRIPTION = "抖音收藏采集与知识库整理（读取本机抖音项目数据）"
 
+# 窗口子系统构建下本进程没有控制台；派生 exe 时不加这个会自己弹一个黑框。
+CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
 
 def mcp_json_path():
     return os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp.json")
@@ -123,7 +126,7 @@ def test_connection(timeout=40):
     try:
         p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, text=True, encoding="utf-8",
-                             errors="replace", bufsize=1)
+                             errors="replace", bufsize=1, creationflags=CREATE_NO_WINDOW)
     except OSError as e:
         return {"ok": False, "error": f"无法启动：{e}"}
 

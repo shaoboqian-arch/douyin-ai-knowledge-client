@@ -5,7 +5,7 @@ import queue
 import sys
 import threading
 
-VERSION = "0.1.7"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
+VERSION = "0.1.8"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
 APP_NAME = "抖音收藏整理"
 MCP_SERVER_NAME = "douyin-fav-sync"
 EXE_NAME = "抖音收藏整理.exe"

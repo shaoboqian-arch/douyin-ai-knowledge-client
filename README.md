@@ -6,7 +6,7 @@
 
 采集 · 账号硬校验 · 增量对比 · 两级分类 · Excel/CSV · Obsidian · 体检 · 入库报告
 
-![Version](https://img.shields.io/badge/version-V0.1.7-19c8b9.svg)
+![Version](https://img.shields.io/badge/version-V0.1.8-19c8b9.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-brightgreen.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-3776ab.svg)
 ![GUI](https://img.shields.io/badge/GUI-Tkinter-19c8b9.svg)
@@ -28,6 +28,20 @@
 
 它不是一个独立的采集器：采集与重建调用你本机已有的抖音项目（TikTokDownloader 二次开发版）
 及其 `.venv`，客户端只负责编排、门禁与交付。**Cookie 不复制、不上传**，仍留在原项目里。
+
+## V0.1.8 本版变更
+
+双击不再多出一个黑色终端窗口。
+
+- **根因**：exe 是控制台子系统，而系统默认终端是 Windows Terminal。双击时 Windows 把控制台交给 WT
+  开一个窗口，程序里的 `ShowWindow(GetConsoleWindow())` 在 ConPTY 下拿到的是 0×0 的
+  `PseudoConsoleWindow`，对它无效，窗口就一直留着
+- **改法**：改用窗口子系统（`--windowed`，spec `console=False`），双击时不再申请控制台，终端窗口从源头消失
+- **连带两处派生进程**：安装器的 PowerShell、MCP 连通性自检的 exe 都加 `CREATE_NO_WINDOW`，
+  否则它们会自己弹框；无控制台时 stdout/stderr 兜底到 devnull
+- **代价**：GUI 程序在 cmd 里直接运行不会等待提示符（PowerShell / bash / 管道调用不受影响）
+
+V0.1.7 的条数门禁收敛、单实例与项目锁全部保留。
 
 ## V0.1.7 本版变更
 
@@ -178,12 +192,12 @@ export-<范围>-<时间戳>/
 
 ## 下载安装
 
-当前版本 **V0.1.7**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
+当前版本 **V0.1.8**。前往 [Releases](https://github.com/shaoboqian-arch/douyin-ai-knowledge-client/releases/latest) 下载：
 
 | 安装包 | 说明 |
 |:---|:---|
-| `*-Setup-V0.1.7.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
-| `*-V0.1.7-portable.zip` | 解压后双击即用，不写注册表 |
+| `*-Setup-V0.1.8.exe` | 创建快捷方式与卸载项，默认装到 `%LOCALAPPDATA%\抖音收藏整理`，不需要管理员权限 |
+| `*-V0.1.8-portable.zip` | 解压后双击即用，不写注册表 |
 
 **前置条件**
 

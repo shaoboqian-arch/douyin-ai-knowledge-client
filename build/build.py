@@ -103,7 +103,7 @@ def build_exe():
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([VENDOR, SRC] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
     args = [
-        PY, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--console",
+        PY, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--windowed",
         "--name", "douyin_sync",
         "--paths", SRC, "--paths", VENDOR,
         "--hidden-import", "tkinter",

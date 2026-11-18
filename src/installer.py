@@ -23,6 +23,9 @@ from ui_kit import (
     CapsuleButton, RoundedEntry, Tooltip, apply_icon, apply_theme, center, fonts,
 )
 
+# 窗口子系统构建下本进程没有控制台，派生 PowerShell 时不加这个会自己弹一个黑框。
+CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\DouyinFavSync"
 
 
@@ -36,7 +39,7 @@ def _ps(script):
     try:
         r = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
-            capture_output=True, timeout=45)
+            capture_output=True, timeout=45, creationflags=CREATE_NO_WINDOW)
         return r.returncode, r.stdout.decode("utf-8", "replace").strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
