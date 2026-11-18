@@ -229,10 +229,16 @@ def main():
             shot = os.path.join(APP, "验证输出", "入库报告-本轮.png")
             os.makedirs(os.path.dirname(shot), exist_ok=True)
             try:
+                import ctypes
                 from PIL import ImageGrab
-                x, y = root.winfo_rootx(), root.winfo_rooty()
-                ImageGrab.grab(bbox=(x, y, x + root.winfo_width(),
-                                     y + root.winfo_height())).save(shot)
+                hwnd = ctypes.windll.user32.GetParent(root.winfo_id()) or root.winfo_id()
+                try:
+                    img = ImageGrab.grab(window=hwnd)
+                except Exception:
+                    x, y = root.winfo_rootx(), root.winfo_rooty()
+                    img = ImageGrab.grab(bbox=(x, y, x + root.winfo_width(),
+                                               y + root.winfo_height()))
+                img.save(shot)
                 check("报告窗口截图已保存",
                       os.path.isfile(shot) and os.path.getsize(shot) > 8000,
                       f"{os.path.getsize(shot) if os.path.isfile(shot) else 0} B")

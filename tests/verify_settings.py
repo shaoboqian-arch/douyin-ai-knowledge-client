@@ -137,14 +137,20 @@ def main():
     os.makedirs(out, exist_ok=True)
     shot = os.path.join(out, f"设置页-{ROUND}.png")
     try:
+        import ctypes
         from PIL import ImageGrab
         win.root.lift()
         win.root.attributes("-topmost", True)
         root.update()
-        time.sleep(0.6)
-        x, y = win.root.winfo_rootx(), win.root.winfo_rooty()
-        ImageGrab.grab(bbox=(x, y, x + win.root.winfo_width(),
-                             y + win.root.winfo_height())).save(shot)
+        time.sleep(0.4)
+        hwnd = ctypes.windll.user32.GetParent(win.root.winfo_id()) or win.root.winfo_id()
+        try:
+            img = ImageGrab.grab(window=hwnd)
+        except Exception:
+            x, y = win.root.winfo_rootx(), win.root.winfo_rooty()
+            img = ImageGrab.grab(bbox=(x, y, x + win.root.winfo_width(),
+                                       y + win.root.winfo_height()))
+        img.save(shot)
         win.root.attributes("-topmost", False)
         check("设置页截图已保存", os.path.isfile(shot) and os.path.getsize(shot) > 5000)
     except Exception as e:

@@ -201,11 +201,17 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     shot = os.path.join(out_dir, f"界面-主窗口-{ROUND}.png")
     try:
+        import ctypes
         from PIL import ImageGrab
         root.update()
-        x, y = root.winfo_rootx(), root.winfo_rooty()
-        w, h = root.winfo_width(), root.winfo_height()
-        ImageGrab.grab(bbox=(x, y, x + w, y + h)).save(shot)
+        hwnd = ctypes.windll.user32.GetParent(root.winfo_id()) or root.winfo_id()
+        try:
+            img = ImageGrab.grab(window=hwnd)
+        except Exception:
+            x, y = root.winfo_rootx(), root.winfo_rooty()
+            w, h = root.winfo_width(), root.winfo_height()
+            img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+        img.save(shot)
         check("截图已保存", os.path.isfile(shot) and os.path.getsize(shot) > 5000,
               shot)
     except Exception as e:

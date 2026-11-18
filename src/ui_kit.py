@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""海岛风格自绘控件：胶囊按钮、圆角输入、阶段微标、进度条，以及 DPI / 居中 / 字体 / 图标 / Tooltip。
+"""现代浅色自绘控件：圆角按钮、圆角输入、阶段微标、进度条，以及 DPI / 居中 / 字体 / 图标 / Tooltip。
 
-配色对照 animal-island / 微信收藏导出 V0.4.4：羊皮纸底 #f8f8f0，字 #794f27，薄荷主色 #19c8b9。
-不改系统窗口圆角框，只把内部画成海岛风格。字体仍用 Microsoft YaHei UI 回退。
-所有正文与辅助文字都按 WCAG AA 调过对比度（见 tests/verify_ui.py 的对比度断言）。
+配色基调：瓷白底 #f6f7f9，纯白卡片 #ffffff，石墨字 #182026，深翠青主色 #0d6e66。
+保留海岛浅色对外别名与 WCAG AA 对比度（见 tests/verify_ui.py 的对比度断言）。
 """
 import calendar
 import ctypes
 import datetime as dt
+import math
 import os
 import sys
 import time
@@ -23,43 +23,37 @@ except ImportError:  # 无桌面环境时仍可跑配色对比度等纯计算测
 
 from common import pointer_inside
 
-# 海岛配色（与微信收藏导出 V0.4.4 同一套 token）
-BG = "#f8f8f0"
-TEXT = "#794f27"
-# MUTED 原为 #9f927d：配 BG 只有 2.86:1、配 SAND 2.51:1，达不到 AA。
-# 加深到 #6f6455 → BG 5.42:1、SAND 4.75:1，仍属同一支灰棕。
-MUTED = "#6f6455"
-MINT = "#19c8b9"
-MINT_HI = "#50b9ab"
-MINT_BG = "#e6f9f6"
-# 非文本元素（进度条填充、日历箭头 hover）要用深薄荷：MINT 对 TRACK 只有 1.63:1，
-# 低于 WCAG 非文本 3:1；MINT_DEEP 对 TRACK 4.68:1、对 SAND 4.95:1，仍是同一支色。
+# 现代浅色配色（WCAG AA 全过）
+BG = "#F6F7F9"
+TEXT = "#182026"
+MUTED = "#525D6B"
+MINT = "#0D6E66"
+MINT_HI = "#095952"
+MINT_BG = "#E6F4F2"
+# 非文本元素（进度条填充、日历箭头 hover）要用深薄荷；保留字面量与对比度门禁兼容。
 MINT_DEEP = "#0b6f66"
-# 薄荷主按钮上的字：米白 #f8f8f0 只有 1.97:1（悬停 2.22:1），改用深棕 6.45:1（悬停 5.72:1）。
-ON_MINT = "#3f2a12"
-SAND = "#f0e8d8"
-BORDER = "#dcd8d1"
-# 错误红原为 #e05a5a（3.40:1），加深到 6.15:1；ERR_BG 只是底色，不动。
-ERR = "#b02a1f"
-ERR_BG = "#fdeeee"
-WHITE = "#ffffff"
-PAPER = "#fffef8"
-GREEN = "#1a7f37"
-# 警告用暗橙 #9a4d00：对 BG 5.73:1、对 SAND 5.02:1，浅底上达到 AA。
-WARN = "#9a4d00"
-TRACK = "#e8e2d6"
+# 主按钮文字：纯白在深翠青上 6.11:1（悬停 8.20:1）。
+ON_MINT = "#FFFFFF"
+SAND = "#EEF0F4"
+BORDER = "#D8DDE6"
+ERR = "#B42318"
+ERR_BG = "#FEF3F2"
+WHITE = "#FFFFFF"
+PAPER = "#FFFFFF"
+GREEN = "#157347"
+WARN = "#9A4D00"
+TRACK = "#E2E6ED"
 
-# 旧名字别名，少改其它页面的 import / 引用
+# 兼容别名，少改其它页面的 import / 引用
 ACCENT = MINT
 ACCENT_HI = MINT_HI
 ON_ACCENT = ON_MINT
-CYAN = GREEN  # 成功/状态不再用亮青，浅底上对比不够
+CYAN = GREEN
 DONE_BG = MINT_BG
 PANEL = PAPER
 SURFACE = SAND
-# 0.1.3/0.1.4 分区卡片用的名字；浅色里卡片用纸面，描边用统一边线
 CARD = PAPER
-CARD_LINE = BORDER
+CARD_LINE = "#E3E7EE"
 
 # 字体族唯一真源：fonts() 探测到系统可用的 CJK 字体后写入；所有控件的默认字体都读它，
 # 避免「一部分走 fonts()、一部分写死字体名」造成同一窗口里两套字族。
@@ -118,17 +112,17 @@ def apply_icon(root):
 
 
 def apply_theme(root):
-    """浅色海岛底 + ttk 控件跟着走，避免白/深色控件裂开。"""
+    """浅色极简底 + ttk 控件跟着走（优先 clam 以支持扁平表头与滚动条）。"""
     try:
         root.configure(bg=BG)
     except tk.TclError:
         pass
     style = ttk.Style(root)
     try:
-        style.theme_use("vista")
+        style.theme_use("clam")
     except tk.TclError:
         try:
-            style.theme_use("clam")
+            style.theme_use("vista")
         except tk.TclError:
             pass
     for name in ("TFrame", "TLabel", "TLabelframe", "TLabelframe.Label"):
@@ -143,19 +137,21 @@ def apply_theme(root):
         style.configure("TEntry", fieldbackground=WHITE, foreground=TEXT,
                         insertcolor=TEXT, bordercolor=BORDER)
         style.configure("Treeview", background=WHITE, fieldbackground=WHITE,
-                        foreground=TEXT, bordercolor=BORDER, rowheight=28)
-        style.map("Treeview", background=[("selected", MINT)],
-                  foreground=[("selected", ON_MINT)])
+                        foreground=TEXT, bordercolor=BORDER, lightcolor=BORDER,
+                        darkcolor=BORDER, borderwidth=1, relief="solid", rowheight=28)
+        style.map("Treeview", background=[("selected", MINT_BG)],
+                  foreground=[("selected", TEXT)])
         style.configure("Treeview.Heading", background=SAND, foreground=MUTED,
-                        bordercolor=BORDER, relief="flat", padding=(8, 6))
+                        bordercolor=BORDER, lightcolor=SAND, darkcolor=SAND,
+                        relief="flat", padding=(10, 6), font=(FONT_FAMILY, 9, "bold"))
         style.map("Treeview.Heading",
                   background=[("active", TRACK)],
                   foreground=[("active", TEXT)])
         for name in ("TScrollbar", "Vertical.TScrollbar", "Horizontal.TScrollbar"):
-            style.configure(name, background=SAND, troughcolor=BG, bordercolor=BG,
-                            arrowcolor=MUTED, darkcolor=SAND, lightcolor=SAND,
-                            relief="flat", width=12)
-            style.map(name, background=[("active", BORDER)],
+            style.configure(name, background="#CFD6E0", troughcolor=BG, bordercolor=BG,
+                            lightcolor="#CFD6E0", darkcolor="#CFD6E0",
+                            arrowcolor=MUTED, relief="flat", width=10, gripcount=0)
+            style.map(name, background=[("active", "#B5BFCE")],
                       arrowcolor=[("active", TEXT)])
         style.configure("TProgressbar", troughcolor=TRACK, background=MINT)
     except tk.TclError:
@@ -232,13 +228,24 @@ if tk is None:
 else:
 
     def _round_rect(canvas, x1, y1, x2, y2, r, **kw):
-        r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
-        pts = [
-            x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
-            x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
-            x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
-        ]
-        return canvas.create_polygon(pts, smooth=True, splinesteps=12, **kw)
+        """真圆弧圆角矩形，避开 Tk smooth=True 的八边形样条畸变。"""
+        r = max(0.0, min(float(r), (x2 - x1) / 2.0, (y2 - y1) / 2.0))
+        if r <= 0.5:
+            return canvas.create_rectangle(x1, y1, x2, y2, **kw)
+        pts = []
+        steps = 12
+        corners = (
+            (x2 - r, y1 + r, -math.pi / 2.0, 0.0),
+            (x2 - r, y2 - r, 0.0, math.pi / 2.0),
+            (x1 + r, y2 - r, math.pi / 2.0, math.pi),
+            (x1 + r, y1 + r, math.pi, 1.5 * math.pi),
+        )
+        for cx, cy, a0, a1 in corners:
+            for i in range(steps + 1):
+                ang = a0 + (a1 - a0) * (i / steps)
+                pts.append(cx + r * math.cos(ang))
+                pts.append(cy + r * math.sin(ang))
+        return canvas.create_polygon(pts, smooth=False, **kw)
 
 
     class Tooltip:
@@ -266,10 +273,11 @@ else:
                 self.tip = tk.Toplevel(self.widget)
                 self.tip.wm_overrideredirect(True)
                 self.tip.wm_geometry(f"+{x}+{y}")
+                self.tip.configure(bg=BORDER)
                 tk.Label(self.tip, text=text, justify="left", wraplength=460,
-                         background=SAND, foreground=TEXT,
-                         relief="solid", borderwidth=1, font=self.font,
-                         highlightbackground=BORDER, padx=10, pady=8).pack()
+                         background=PAPER, foreground=TEXT,
+                         relief="flat", borderwidth=0, font=self.font,
+                         padx=10, pady=8).pack(padx=1, pady=1)
             except (tk.TclError, OSError):
                 self.tip = None
 
@@ -293,13 +301,14 @@ else:
         _PRESS_MS = 100
 
         def __init__(self, master, text="", command=None, primary=False,
-                     width=80, height=36, font=None, **kw):
+                     width=80, height=36, font=None, subtle=False, **kw):
             self._bg = kw.pop("bg", None) or getattr(master, "cget", lambda _k: BG)("bg") or BG
             super().__init__(master, width=width, height=height, highlightthickness=0,
                              bd=0, bg=self._bg, cursor="hand2", takefocus=1, **kw)
             self._text = text
             self._command = command
             self._primary = primary
+            self._subtle = subtle
             self._state = "normal"
             self._hover = False
             self._focus = False
@@ -406,54 +415,59 @@ else:
 
         def _draw(self):
             self.delete("all")
-            w = int(self.winfo_width() or self._box_w)
-            h = int(self.winfo_height() or self._box_h)
+            w = int(self.winfo_width())
+            h = int(self.winfo_height())
+            if w <= 1:
+                w = int(self._box_w)
+            if h <= 1:
+                h = int(self._box_h)
             if w < 8 or h < 8:
                 return
             disabled = self._state == "disabled"
             lift = 0.0 if disabled else self._lift
             press = 0.0 if disabled else self._press
             if disabled:
-                fill, fg, border = SAND, MUTED, BORDER
-                shadow = None
+                fill, fg, border, bw = SAND, MUTED, BORDER, 1
             elif self._primary:
                 fill = _lerp_color(MINT, MINT_HI, lift)
                 if press:
-                    fill = _lerp_color(fill, "#14b3a5", press)
-                fg, border = ON_MINT, fill
-                # 中性暖灰影，避免薄荷影和浅填充叠在一起看不清抬起。
-                shadow = _lerp_color("#c9bfb0", "#9e9282", lift)
-            else:
-                fill = _lerp_color(SAND, "#f7f1e6", lift)
+                    fill = _lerp_color(fill, "#074741", press)
+                fg, border, bw = ON_MINT, fill, 1
+            elif self._subtle:
+                fill = _lerp_color(WHITE, SAND, lift)
                 if press:
-                    fill = _lerp_color(fill, "#e8dfcf", press)
-                fg, border = TEXT, BORDER
-                shadow = "#b8aea0"
+                    fill = _lerp_color(fill, TRACK, press)
+                fg = _lerp_color(MUTED, TEXT, lift)
+                border, bw = "", 0
+            else:
+                fill = _lerp_color("#F8F9FB", SAND, lift)
+                if press:
+                    fill = _lerp_color(fill, TRACK, press)
+                fg = TEXT
+                border = _lerp_color("#CFD6E0", "#B5BFCE", lift)
+                bw = 1
 
-            # 预留上下空位：悬停抬起约 4px，阴影落到按钮下面。
-            pad_top, pad_bot = 5.0, 7.0
-            shift_y = -4.0 * lift + 2.0 * press
-            scale = 1.0 - 0.05 * press
+            # 与 RoundedEntry(y=2..h-2) 严格等高对齐，悬停轻抬 1px。
+            pad_top, pad_bot = 2.0, 2.0
+            shift_y = -1.0 * lift + 1.0 * press
+            scale = 1.0 - 0.02 * press
             x1, y1, x2, y2 = 1.0, pad_top + shift_y, w - 1.0, h - pad_bot + shift_y
             if scale < 0.999:
                 cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-                bw, bh = (x2 - x1) * scale, (y2 - y1) * scale
-                x1, x2 = cx - bw / 2.0, cx + bw / 2.0
-                y1, y2 = cy - bh / 2.0, cy + bh / 2.0
-            r = max(2.0, (y2 - y1) / 2.0)
-            shadow_dy = (3.0 + 4.0 * lift) * (1.0 - press) if self._primary else (5.0 * lift * (1.0 - press))
-            if shadow and shadow_dy > 0.4 and not disabled:
-                _round_rect(self, x1, y1 + shadow_dy, x2, y2 + shadow_dy, r,
-                            fill=shadow, outline="")
-                _round_rect(self, x1, y1, x2, y2, r, fill=fill, outline="")
+                bw_s, bh_s = (x2 - x1) * scale, (y2 - y1) * scale
+                x1, x2 = cx - bw_s / 2.0, cx + bw_s / 2.0
+                y1, y2 = cy - bh_s / 2.0, cy + bh_s / 2.0
+            r = min(8.0, max(2.0, (y2 - y1) / 2.0))
+            if border:
+                _round_rect(self, x1, y1, x2, y2, r, fill=fill, outline=border, width=bw)
             else:
-                _round_rect(self, x1, y1, x2, y2, r, fill=fill, outline=border)
+                _round_rect(self, x1, y1, x2, y2, r, fill=fill, outline="")
             self.create_text((x1 + x2) / 2.0, (y1 + y2) / 2.0, text=self._text,
                              fill=fg, font=self._font)
-            # 焦点环只给键盘，避免鼠标按下时被描边抢走「按下收回」的观感。
             if self._focus and not disabled and press < 0.2:
-                _round_rect(self, x1 + 1, y1 + 1, x2 - 1, y2 - 1, max(1.0, r - 1),
-                            fill="", outline=TEXT, width=2)
+                ring = ON_MINT if self._primary else MINT
+                _round_rect(self, x1 + 2, y1 + 2, x2 - 2, y2 - 2, max(1.0, r - 2),
+                            fill="", outline=ring, width=1.5)
 
         def _on_enter(self, _e=None):
             if self._state == "disabled":
@@ -563,9 +577,9 @@ else:
                 self, font=font, width=width, bd=0, highlightthickness=0,
                 relief="flat", bg=WHITE, fg=TEXT, insertbackground=TEXT,
                 readonlybackground=WHITE, disabledbackground=WHITE,
-                disabledforeground=MUTED, selectbackground=MINT,
-                selectforeground=ON_MINT, **kw)
-            self.entry.place(x=14, y=5, width=self._min_w - 28, height=26)
+                disabledforeground=MUTED, selectbackground=MINT_BG,
+                selectforeground=TEXT, **kw)
+            self.entry.place(x=12, y=6, width=self._min_w - 24, height=24)
             self._ph = tk.Label(self, text=placeholder, bg=WHITE, fg=MUTED, font=font,
                                 cursor="xterm")
             self._ph.bind("<Button-1>", lambda _e: self.entry.focus_set())
@@ -610,8 +624,8 @@ else:
 
         def _on_resize(self, _event=None):
             w = max(self._min_w, int(self.winfo_width() or self._min_w))
-            inner = max(20, w - 14 - self._right_inset)
-            self.entry.place_configure(x=14, y=5, width=inner, height=26)
+            inner = max(20, w - 12 - self._right_inset)
+            self.entry.place_configure(x=12, y=6, width=inner, height=24)
             self._sync_placeholder()
             self._draw()
             if self._path_mode:
@@ -649,7 +663,7 @@ else:
             try:
                 show = (not self.entry.get()) and self.entry.focus_get() is not self.entry
                 if show:
-                    self._ph.place(x=14, y=6)
+                    self._ph.place(x=12, y=6)
                 else:
                     self._ph.place_forget()
             except (tk.TclError, KeyError):
@@ -667,10 +681,10 @@ else:
             if self._focus:
                 outline, width = MINT, 2
             elif self._hover:
-                outline, width = "#c8bfb0", 1
+                outline, width = "#B5BFCE", 1
             else:
                 outline, width = BORDER, 1
-            _round_rect(c, 1, 1, w - 1, h - 1, h / 2, fill=WHITE, outline=outline, width=width)
+            _round_rect(c, 1, 2, w - 1, h - 2, 8.0, fill=WHITE, outline=outline, width=width)
 
         def get(self):
             return self.entry.get()
@@ -878,8 +892,9 @@ else:
         """阶段胶囊微标：pending / now / done / failed。"""
 
         def __init__(self, master, text="", font=None, width=70, height=24, **kw):
+            bg = kw.pop("bg", None) or getattr(master, "cget", lambda _k: BG)("bg") or BG
             super().__init__(master, width=width, height=height, highlightthickness=0,
-                             bd=0, bg=BG, **kw)
+                             bd=0, bg=bg, **kw)
             self._text = text
             self._font = font or (FONT_FAMILY, 9)
             self._mode = "pending"
@@ -893,17 +908,21 @@ else:
 
         def _draw(self):
             self.delete("all")
-            w = int(self.winfo_width() or self._box_w)
-            h = int(self.winfo_height() or self._box_h)
+            w = int(self.winfo_width())
+            h = int(self.winfo_height())
+            if w <= 1:
+                w = int(self._box_w)
+            if h <= 1:
+                h = int(self._box_h)
             if self._mode == "now":
                 fill, fg = MINT, ON_MINT
             elif self._mode == "done":
-                fill, fg = MINT_BG, TEXT
+                fill, fg = MINT_BG, MINT
             elif self._mode == "failed":
                 fill, fg = ERR_BG, ERR
             else:
                 fill, fg = SAND, MUTED
-            _round_rect(self, 1, 1, w - 1, h - 1, h / 2, fill=fill, outline="")
+            _round_rect(self, 1, 1, w - 1, h - 1, 6.0, fill=fill, outline="")
             self.create_text(w / 2, h / 2, text=self._text, fill=fg, font=self._font)
 
 
@@ -911,7 +930,8 @@ else:
         """薄荷进度条；determinate 与 indeterminate 两种。"""
 
         def __init__(self, master, height=8, **kw):
-            super().__init__(master, height=height + 4, highlightthickness=0, bd=0, bg=BG, **kw)
+            bg = kw.pop("bg", None) or getattr(master, "cget", lambda _k: BG)("bg") or BG
+            super().__init__(master, height=height + 4, highlightthickness=0, bd=0, bg=bg, **kw)
             self._h = height
             self._value = 0
             self._maximum = 100
@@ -1009,11 +1029,11 @@ else:
             host = self.entry
             if not isinstance(host, RoundedEntry):
                 return
-            host.set_right_inset(36)
+            host.set_right_inset(34)
             self._trigger = CapsuleButton(
-                host, text="▾", command=self.toggle, width=26, height=28,
-                font=self.font, bg=WHITE)
-            self._trigger.place(relx=1, x=-31, y=4, width=26, height=28)
+                host, text="▾", command=self.toggle, width=26, height=26,
+                font=self.font, bg=WHITE, subtle=True)
+            self._trigger.place(relx=1, x=-30, y=5, width=26, height=26)
 
         def toggle(self, _event=None):
             if self.win is not None:
@@ -1063,7 +1083,7 @@ else:
             self.win.wm_overrideredirect(True)
             self.win.configure(bg=BORDER)
             self.win.wm_geometry(f"+{x}+{y}")
-            self._body = tk.Frame(self.win, bg=BG, padx=8, pady=8)
+            self._body = tk.Frame(self.win, bg=PAPER, padx=12, pady=10)
             self._body.pack(padx=1, pady=1)
             self._build_chrome()
             self.win.update_idletasks()
@@ -1130,31 +1150,31 @@ else:
             self._stage_w = cw * 7
             # 日期格有 pady=1、ipady=1，6 行要加上这些间距，避免最后一周被裁切。
             self._stage_h = ch * 6 + 4 * 6
-            head = tk.Frame(self._body, bg=BG)
+            head = tk.Frame(self._body, bg=PAPER)
             head.pack(fill="x")
             self._arrow(head, "‹", -1).pack(side="left")
-            self._title_stage = tk.Frame(head, bg=BG, width=self._stage_w - 64, height=28)
+            self._title_stage = tk.Frame(head, bg=PAPER, width=self._stage_w - 64, height=28)
             self._title_stage.pack(side="left", expand=True, fill="both")
             self._title_stage.pack_propagate(False)
             self._arrow(head, "›", 1).pack(side="right")
-            days = tk.Frame(self._body, bg=BG)
+            days = tk.Frame(self._body, bg=PAPER)
             days.pack(pady=(6, 0))
             for i, name in enumerate("一二三四五六日"):
-                tk.Label(days, text=name, bg=BG, fg=MUTED, font=self.font,
+                tk.Label(days, text=name, bg=PAPER, fg=MUTED, font=self.font,
                          width=3).grid(row=0, column=i)
-            self._stage = tk.Frame(self._body, bg=BG, width=self._stage_w,
+            self._stage = tk.Frame(self._body, bg=PAPER, width=self._stage_w,
                                    height=self._stage_h)
             self._stage.pack()
             self._stage.pack_propagate(False)
-            foot = tk.Frame(self._body, bg=BG)
+            foot = tk.Frame(self._body, bg=PAPER)
             foot.pack(fill="x", pady=(8, 0))
             self._clear_btn = CapsuleButton(
                 foot, text="清除 / 回到不限", command=self._clear,
-                width=168, height=28, font=self.font, bg=BG)
+                width=168, height=30, font=self.font, bg=PAPER)
             self._clear_btn.pack()
 
         def _make_grid(self, year, month):
-            grid = tk.Frame(self._stage, bg=BG, width=self._stage_w, height=self._stage_h)
+            grid = tk.Frame(self._stage, bg=PAPER, width=self._stage_w, height=self._stage_h)
             selected = self._current()
             today = dt.date.today()
             weeks = calendar.Calendar(0).monthdayscalendar(year, month)
@@ -1163,7 +1183,7 @@ else:
             for r, week in enumerate(weeks[:6]):
                 for c, day in enumerate(week):
                     cell = tk.Label(grid, text="" if day == 0 else str(day),
-                                    bg=BG, fg=TEXT, font=self.font, width=3)
+                                    bg=PAPER, fg=TEXT, font=self.font, width=3)
                     cell.grid(row=r, column=c, padx=1, pady=1, ipady=1)
                     if day == 0:
                         continue
@@ -1171,7 +1191,7 @@ else:
                     if d == selected:
                         cell.configure(bg=MINT, fg=ON_MINT, cursor="hand2")
                     elif d == today:
-                        cell.configure(bg=MINT_BG, fg=TEXT, cursor="hand2")
+                        cell.configure(bg=MINT_BG, fg=MINT, cursor="hand2")
                     else:
                         cell.configure(cursor="hand2")
                     cell._rest_bg = cell.cget("bg")
@@ -1191,7 +1211,7 @@ else:
 
         def _make_title(self, year, month):
             return tk.Label(self._title_stage, text=f"{year}-{month:02d}",
-                            bg=BG, fg=TEXT, font=self.font)
+                            bg=PAPER, fg=TEXT, font=(self.font[0], self.font[1], "bold"))
 
         def _cancel_slide(self):
             if self._slide_job is not None:
@@ -1274,11 +1294,11 @@ else:
 
         def _arrow(self, parent, text, delta):
             """月份切换箭头：纯文字标签，不参与焦点，避免出现按钮焦点框（0.1.4）。"""
-            lb = tk.Label(parent, text=text, bg=BG, fg=TEXT, font=(self.font[0], 12),
+            lb = tk.Label(parent, text=text, bg=PAPER, fg=TEXT, font=(self.font[0], 12),
                           width=2, cursor="hand2", takefocus=0)
             lb.bind("<Button-1>", lambda _e: self._shift(delta))
             lb.bind("<Enter>", lambda _e: lb.configure(bg=SAND, fg=MINT_DEEP))
-            lb.bind("<Leave>", lambda _e: lb.configure(bg=BG, fg=TEXT))
+            lb.bind("<Leave>", lambda _e: lb.configure(bg=PAPER, fg=TEXT))
             return lb
 
         def _shift(self, delta):

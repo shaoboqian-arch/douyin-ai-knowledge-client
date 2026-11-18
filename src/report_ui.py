@@ -11,7 +11,7 @@ import detect
 import kbreport
 from common import APP_NAME
 from ui_kit import (
-    BG, BORDER, CYAN, ERR, FONT_FAMILY, MUTED, PANEL, TEXT, WARN,
+    BG, BORDER, CARD_LINE, CYAN, ERR, FONT_FAMILY, MUTED, PANEL, SAND, TEXT, WARN,
     CapsuleButton, apply_icon, apply_theme, center, fonts,
 )
 
@@ -53,7 +53,7 @@ class ReportWindow:
                             anchor="w", justify="left", wraplength=700)
         self.sub.grid(row=1, column=0, sticky="ew", pady=(2, 12))
 
-        wrap = tk.Frame(f, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
+        wrap = tk.Frame(f, bg=PANEL, highlightbackground=CARD_LINE, highlightthickness=1)
         wrap.grid(row=2, column=0, sticky="nsew")
         wrap.columnconfigure(0, weight=1)
         wrap.rowconfigure(0, weight=1)
@@ -63,15 +63,19 @@ class ReportWindow:
         self._canvas.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
 
-        body = tk.Frame(self._canvas, bg=PANEL, padx=14, pady=12)
+        body = tk.Frame(self._canvas, bg=PANEL, padx=18, pady=14)
         body.columnconfigure(1, weight=1)
         self._body_id = self._canvas.create_window((0, 0), window=body, anchor="nw")
 
-        tk.Label(body, text="环节", font=self.font_small, bg=PANEL, fg=MUTED,
-                 anchor="w").grid(row=0, column=0, sticky="nw", padx=(0, 16), pady=(0, 8))
-        tk.Label(body, text="结果", font=self.font_small, bg=PANEL, fg=MUTED,
-                 anchor="w").grid(row=0, column=1, sticky="w", pady=(0, 8))
-        for i, item in enumerate(self.report.get("rows") or [], 1):
+        tk.Label(body, text="环节", font=(self.font_small[0], self.font_small[1], "bold"),
+                 bg=PANEL, fg=MUTED, anchor="w").grid(
+            row=0, column=0, sticky="nw", padx=(0, 16), pady=(0, 8))
+        tk.Label(body, text="结果", font=(self.font_small[0], self.font_small[1], "bold"),
+                 bg=PANEL, fg=MUTED, anchor="w").grid(
+            row=0, column=1, sticky="w", pady=(0, 8))
+        tk.Frame(body, bg=CARD_LINE, height=1).grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        for i, item in enumerate(self.report.get("rows") or [], 2):
             state = item.get("状态")
             tk.Label(body, text=item.get("环节", ""), font=self.font_main, bg=PANEL,
                      fg=TEXT, anchor="nw", width=10).grid(
@@ -93,19 +97,19 @@ class ReportWindow:
         self.state = tk.Label(foot, text="", font=self.font_small, bg=BG, fg=MUTED,
                               anchor="w", justify="left", wraplength=360)
         self.state.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        CapsuleButton(foot, text="复制", command=self.copy, width=72, height=32,
+        CapsuleButton(foot, text="复制", command=self.copy, width=72, height=34,
                       font=self.font_small).grid(row=0, column=1, padx=(0, 8))
-        CapsuleButton(foot, text="存为 md", command=self.save_md, width=88, height=32,
+        CapsuleButton(foot, text="存为 md", command=self.save_md, width=88, height=34,
                       font=self.font_small).grid(row=0, column=2, padx=(0, 8))
         kb_ok = bool(kb_dir and os.path.isdir(kb_dir))
         col = 3
         if kb_ok:
             CapsuleButton(foot, text="打开知识库", command=self.open_kb, primary=True,
-                          width=100, height=32, font=self.font_small).grid(
+                          width=104, height=34, font=self.font_small).grid(
                 row=0, column=col, padx=(0, 8))
             col += 1
         CapsuleButton(foot, text="关闭", command=self.close, primary=not kb_ok,
-                      width=72, height=32, font=self.font_small).grid(row=0, column=col)
+                      width=72, height=34, font=self.font_small).grid(row=0, column=col)
 
         root.bind("<Configure>", self._on_root, add="+")
         root.protocol("WM_DELETE_WINDOW", self.close)

@@ -26,8 +26,8 @@ from ui_kit import (
 )
 
 W = 780
-BASE_H = 326
-PANEL_H = 372
+BASE_H = 338
+PANEL_H = 392
 HINT_H = 76
 
 GROUPS = (("video", "视频"), ("album", "图集"), ("ai", "其中 · AI 笔记"))
@@ -66,10 +66,11 @@ def _card(parent, title, title_font):
     """带标题的分区卡片，返回可放内容的 body。"""
     outer = tk.Frame(parent, bg=CARD, highlightbackground=CARD_LINE,
                      highlightthickness=1)
-    inner = tk.Frame(outer, bg=CARD, padx=18, pady=14)
+    inner = tk.Frame(outer, bg=CARD, padx=20, pady=15)
     inner.pack(fill="both", expand=True)
     tk.Label(inner, text=title, font=title_font,
-             bg=CARD, fg=TEXT, anchor="w").pack(fill="x", pady=(0, 12))
+             bg=CARD, fg=TEXT, anchor="w").pack(fill="x", pady=(0, 8))
+    tk.Frame(inner, bg=CARD_LINE, height=1).pack(fill="x", pady=(0, 12))
     body = tk.Frame(inner, bg=CARD)
     body.pack(fill="both", expand=True)
     return outer, body
@@ -124,14 +125,14 @@ class App:
         tk.Label(head, text="抖音收藏整理", font=(family, 16, "bold"),
                  bg=BG, fg=TEXT, anchor="w").grid(row=0, column=0, sticky="w")
         self.btn = CapsuleButton(head, text="⚠️ 全仓同步", command=self.primary_action,
-                                 primary=True, width=118, height=32,
+                                 primary=True, width=118, height=34,
                                  font=(family, 10, "bold"))
         self.btn.grid(row=0, column=1, sticky="e", padx=(0, 8))
         Tooltip(self.btn, lambda: "必做的一次全收藏扫描：扫完重建知识库，再导出所选范围；"
                                   "每条收藏约 1 秒，用时随收藏数等比变化",
                 font=font_small)
         CapsuleButton(head, text="设置", command=self.open_settings, width=72,
-                      height=32, font=font_small).grid(row=0, column=2, sticky="e")
+                      height=34, font=font_small).grid(row=0, column=2, sticky="e")
 
         self.summary = tk.Label(f, text="正在读取知识库现状…", font=font_small,
                                 bg=BG, fg=MUTED, anchor="w")
@@ -144,7 +145,8 @@ class App:
 
         tk.Label(body, text="导出到", font=font_main, bg=CARD, fg=MUTED).grid(
             row=0, column=0, sticky="w", pady=(0, 12))
-        self.dest = RoundedEntry(body, font=font_main, path=True, path_font=font_small)
+        self.dest = RoundedEntry(body, font=font_main, path=True, path_font=font_small,
+                                 panel_bg=CARD)
         self.dest.grid(row=0, column=1, sticky="ew", padx=(14, 10), pady=(0, 12))
         CapsuleButton(body, text="浏览…", command=self.pick, width=88, height=36,
                       font=font_small).grid(row=0, column=2, pady=(0, 12))
@@ -202,15 +204,15 @@ class App:
         self.info.grid(row=0, column=1, padx=(6, 0))
         self.info.grid_remove()
         self.report_btn = CapsuleButton(sf, text="入库报告", command=self.open_report,
-                                        width=88, height=30, font=font_small)
+                                        width=88, height=32, font=font_small)
         self.report_btn.grid(row=0, column=2, padx=(6, 0))
         self.report_btn.grid_remove()
         self.retry_btn = CapsuleButton(sf, text="续跑", command=self.start_retry,
-                                       width=64, height=30, font=font_small)
+                                       width=64, height=32, font=font_small)
         self.retry_btn.grid(row=0, column=3, padx=(6, 0))
         self.retry_btn.grid_remove()
         self.open_btn = CapsuleButton(sf, text="打开", command=self.open_result,
-                                      width=64, height=30, font=font_small)
+                                      width=64, height=32, font=font_small)
         self.open_btn.grid(row=0, column=4, padx=(6, 0))
         self.open_btn.grid_remove()
         Tooltip(self.state, lambda: self.full_state, font=font_small)
@@ -247,7 +249,7 @@ class App:
     # ---------------------------------------------------------------- 进度表
     def _build_panel(self, parent):
         p = tk.Frame(parent, bg=CARD, highlightbackground=CARD_LINE,
-                     highlightthickness=1, padx=16, pady=14)
+                     highlightthickness=1, padx=20, pady=15)
         p.columnconfigure(0, weight=1)
         p.rowconfigure(3, weight=1)
 
@@ -256,37 +258,41 @@ class App:
         hdr.columnconfigure(6, weight=1)
         self.badges = {}
         for i, (key, label) in enumerate(PHASES):
-            b = PhaseBadge(hdr, text=label, font=self.font_small, width=66, height=24)
+            b = PhaseBadge(hdr, text=label, font=self.font_small, width=66, height=24, bg=CARD)
             b.grid(row=0, column=i, padx=(0, 6))
             self.badges[key] = b
         CapsuleButton(hdr, text="收起", command=self.hide_panel,
-                      width=58, height=24, font=self.font_small).grid(row=0, column=6, sticky="e")
+                      width=58, height=26, font=self.font_small, bg=CARD).grid(row=0, column=6, sticky="e")
 
-        tbl = tk.Frame(p, bg=CARD)
-        tbl.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 8))
+        tbl = tk.Frame(p, bg=BG, highlightbackground=CARD_LINE, highlightthickness=1,
+                       padx=16, pady=10)
+        tbl.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 10))
+        tbl.columnconfigure(0, weight=2)
+        for j in (1, 2, 3):
+            tbl.columnconfigure(j, weight=1)
         for j, c in enumerate(("类别", "总数", "已写出", "待加工")):
-            tk.Label(tbl, text=c, font=self.font_small, fg=MUTED, bg=CARD,
-                     width=12 if j else 16,
-                     anchor="w" if j == 0 else "e").grid(row=0, column=j, padx=(0, 6))
+            tk.Label(tbl, text=c, font=self.font_small, fg=MUTED, bg=BG,
+                     anchor="w" if j == 0 else "e").grid(
+                row=0, column=j, sticky="ew", padx=(0, 8 if j < 3 else 0), pady=(0, 4))
         self.cell = {}
         for i, (g, name) in enumerate(GROUPS, 1):
-            tk.Label(tbl, text=name, font=self.font_small, fg=TEXT, bg=CARD,
-                     width=16, anchor="w").grid(row=i, column=0, sticky="w")
+            tk.Label(tbl, text=name, font=self.font_small, fg=TEXT, bg=BG,
+                     anchor="w").grid(row=i, column=0, sticky="w", pady=1)
             for j, key in enumerate(("total", "ok", "gap"), 1):
-                v = tk.Label(tbl, text="0", font=self.font_small, fg=TEXT, bg=CARD,
-                             width=12, anchor="e")
-                v.grid(row=i, column=j, padx=(0, 6))
+                v = tk.Label(tbl, text="0", font=(self.family, 9, "bold"), fg=TEXT, bg=BG,
+                             anchor="e")
+                v.grid(row=i, column=j, sticky="e", padx=(0, 8 if j < 3 else 0), pady=1)
                 self.cell[(g, key)] = v
 
         gap_row = tk.Frame(p, bg=CARD)
-        gap_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 4))
+        gap_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 6))
         gap_row.columnconfigure(0, weight=1)
         self.gap_title = tk.Label(gap_row, text="待加工 0", font=self.font_small,
                                   fg=MUTED, bg=CARD, anchor="w", justify="left",
                                   wraplength=560)
         self.gap_title.grid(row=0, column=0, sticky="w")
         self.patch_btn = CapsuleButton(gap_row, text="补加工", command=self.open_gaps,
-                                       width=76, height=26, font=self.font_small)
+                                       width=76, height=28, font=self.font_small, bg=CARD)
         self.patch_btn.grid(row=0, column=1, sticky="e")
         self.patch_btn.grid_remove()
         self.tree = ttk.Treeview(p, columns=("name", "reason"), show="headings", height=4)
@@ -303,8 +309,9 @@ class App:
         self.tree.bind("<Return>", self._open_gap)
         self.tree.bind("<Double-1>", self._open_gap)
 
-        self.hint = tk.Frame(p, bg=ERR_BG, padx=10, pady=8)
-        self.hint.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.hint = tk.Frame(p, bg=ERR_BG, highlightbackground="#F5C2C0",
+                             highlightthickness=1, padx=12, pady=8)
+        self.hint.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         self.hint_label = tk.Label(self.hint, text="", font=self.font_small,
                                    fg=TEXT, bg=ERR_BG, justify="left", anchor="w",
                                    wraplength=620)
@@ -397,8 +404,10 @@ class App:
         tk.Label(f, text="这些条目缺 AI 判定 / 转写 / 介绍 / 概念；补齐后点「仅导出」刷新批次，"
                         "不必重新采集。", font=self.font_small, bg=BG, fg=MUTED,
                  anchor="w", justify="left").pack(fill="x", pady=(2, 10))
-        box = tk.Text(f, font=self.font_small, bg=PANEL, fg=TEXT, relief="flat",
-                      wrap="word", padx=10, pady=8)
+        box_wrap = tk.Frame(f, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
+        box_wrap.pack(fill="both", expand=True)
+        box = tk.Text(box_wrap, font=self.font_small, bg=PANEL, fg=TEXT, relief="flat",
+                      wrap="word", padx=12, pady=10)
         box.pack(fill="both", expand=True)
         lines = []
         for i, it in enumerate(self.gaps, 1):

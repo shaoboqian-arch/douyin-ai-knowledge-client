@@ -17,7 +17,7 @@ import detect
 import pipeline
 from common import APP_NAME, data_dir
 from ui_kit import (
-    BG, BORDER, CYAN, ERR, MUTED, PANEL, SURFACE, TEXT, WARN,
+    BG, BORDER, CARD, CARD_LINE, CYAN, ERR, MUTED, PANEL, SURFACE, TEXT, WARN,
     CapsuleButton, CheckBox, RoundedEntry, apply_icon, apply_theme, center, fonts,
 )
 
@@ -38,71 +38,81 @@ class Setup:
         root.configure(bg=BG)
         apply_icon(root)
         apply_theme(root)
-        center(root, 680, 424)
+        center(root, 690, 444)
 
-        f = tk.Frame(root, bg=BG, padx=20, pady=16)
+        f = tk.Frame(root, bg=BG, padx=22, pady=18)
         f.pack(fill="both", expand=True)
-        f.columnconfigure(1, weight=1)
+        f.columnconfigure(0, weight=1)
 
-        tk.Label(f, text="项目目录", font=font_main, bg=BG, fg=MUTED).grid(
+        outer = tk.Frame(f, bg=CARD, highlightbackground=CARD_LINE, highlightthickness=1)
+        outer.grid(row=0, column=0, sticky="ew")
+        outer.columnconfigure(0, weight=1)
+        card = tk.Frame(outer, bg=CARD, padx=20, pady=16)
+        card.grid(row=0, column=0, sticky="ew")
+        card.columnconfigure(1, weight=1)
+
+        tk.Label(card, text="项目目录", font=font_main, bg=CARD, fg=MUTED).grid(
             row=0, column=0, sticky="w", pady=(0, 10))
-        self.project = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
+        self.project = RoundedEntry(card, font=font_main, path=True, path_font=font_small,
+                                    panel_bg=CARD)
         self.project.grid(row=0, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
         self.project.insert(0, self.cfg.get("project_dir", ""))
-        self.scan_btn = CapsuleButton(f, text="自动发现", command=self.autodetect,
-                                      width=78, height=36, font=font_small)
+        self.scan_btn = CapsuleButton(card, text="自动发现", command=self.autodetect,
+                                      width=82, height=36, font=font_small, bg=CARD)
         self.scan_btn.grid(row=0, column=2, padx=(0, 6), pady=(0, 10))
-        CapsuleButton(f, text="浏览…", command=self.pick_project, width=64, height=36,
-                      font=font_small).grid(row=0, column=3, pady=(0, 10))
+        CapsuleButton(card, text="浏览…", command=self.pick_project, width=68, height=36,
+                      font=font_small, bg=CARD).grid(row=0, column=3, pady=(0, 10))
 
-        tk.Label(f, text="抖音账号", font=font_main, bg=BG, fg=MUTED).grid(
-            row=1, column=0, sticky="w", pady=(0, 10))
-        self.account = RoundedEntry(f, font=font_main)
-        self.account.grid(row=1, column=1, sticky="ew", padx=(12, 8), pady=(0, 10))
+        tk.Label(card, text="抖音账号", font=font_main, bg=CARD, fg=MUTED).grid(
+            row=1, column=0, sticky="w", pady=(0, 4))
+        self.account = RoundedEntry(card, font=font_main, panel_bg=CARD)
+        self.account.grid(row=1, column=1, sticky="ew", padx=(12, 8), pady=(0, 4))
         self.account.insert(0, self.cfg.get("expect_nickname", ""))
         self.account.set_readonly(True)
-        self.verify_btn = CapsuleButton(f, text="校验账号", command=self.probe, width=78,
-                                        height=36, font=font_small)
-        self.verify_btn.grid(row=1, column=2, padx=(0, 6), pady=(0, 10))
-        CapsuleButton(f, text="采用", command=self.adopt, width=64, height=36,
-                      font=font_small).grid(row=1, column=3, pady=(0, 10))
-        tk.Label(f, text="请先校验账号，再点采用", font=font_small, bg=BG, fg=MUTED,
+        self.verify_btn = CapsuleButton(card, text="校验账号", command=self.probe, width=82,
+                                        height=36, font=font_small, bg=CARD)
+        self.verify_btn.grid(row=1, column=2, padx=(0, 6), pady=(0, 4))
+        CapsuleButton(card, text="采用", command=self.adopt, width=68, height=36,
+                      font=font_small, bg=CARD).grid(row=1, column=3, pady=(0, 4))
+        tk.Label(card, text="请先校验账号，再点采用", font=font_small, bg=CARD, fg=MUTED,
                  anchor="w").grid(row=2, column=1, columnspan=3, sticky="w",
-                                  padx=(12, 0), pady=(0, 8))
+                                  padx=(12, 0), pady=(0, 10))
 
-        tk.Label(f, text="知识库", font=font_main, bg=BG, fg=MUTED).grid(
-            row=3, column=0, sticky="w", pady=(0, 14))
-        self.kb = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
-        self.kb.grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=(0, 14))
+        tk.Label(card, text="知识库", font=font_main, bg=CARD, fg=MUTED).grid(
+            row=3, column=0, sticky="w", pady=(0, 12))
+        self.kb = RoundedEntry(card, font=font_main, path=True, path_font=font_small,
+                               panel_bg=CARD)
+        self.kb.grid(row=3, column=1, sticky="ew", padx=(12, 8), pady=(0, 12))
         self.kb.insert(0, self.cfg.get("kb_dir", ""))
-        CapsuleButton(f, text="浏览…", command=self.pick_kb, width=64, height=36,
-                      font=font_small).grid(row=3, column=2, columnspan=2, pady=(0, 14))
+        CapsuleButton(card, text="浏览…", command=self.pick_kb, width=68, height=36,
+                      font=font_small, bg=CARD).grid(row=3, column=2, columnspan=2,
+                                                     sticky="e", pady=(0, 12))
 
         obs = detect.obsidian_info(self.cfg.get("obsidian_exe", ""))
         self.obsidian = obs
-        kb_row = tk.Frame(f, bg=BG)
-        kb_row.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        kb_row = tk.Frame(card, bg=CARD)
+        kb_row.grid(row=4, column=0, columnspan=4, sticky="ew")
         self.kb_switch = CheckBox(kb_row,
                                   value=bool(self.cfg.get("kb_enabled", True)) and obs["installed"],
-                                  bg=BG)
+                                  bg=CARD)
         self.kb_switch.set_enabled(obs["installed"])
         self.kb_switch.grid(row=0, column=0, sticky="w")
         kb_label = tk.Label(kb_row, text="同时重建 Obsidian 知识库", font=font_main,
-                            bg=BG, fg=TEXT, cursor="hand2")
+                            bg=CARD, fg=TEXT, cursor="hand2")
         kb_label.grid(row=0, column=1, sticky="w", padx=(8, 12))
         kb_label.bind("<Button-1>", lambda _e: self.kb_switch._toggle())
-        self.obs_state = tk.Label(kb_row, text="", font=font_small, bg=BG,
+        self.obs_state = tk.Label(kb_row, text="", font=font_small, bg=CARD,
                                   fg=MUTED, anchor="w")
         self.obs_state.grid(row=0, column=2, sticky="ew")
         kb_row.columnconfigure(2, weight=1)
         self.refresh_obsidian()
 
         self.state = tk.Label(f, text="", font=font_small, bg=BG, fg=MUTED,
-                              anchor="w", wraplength=620, justify="left")
-        self.state.grid(row=5, column=0, columnspan=4, sticky="ew")
+                              anchor="w", wraplength=640, justify="left")
+        self.state.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         self.done_btn = CapsuleButton(f, text="完成", command=self.commit, primary=True,
                                       height=40, font=(family, 10, "bold"))
-        self.done_btn.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(14, 0))
+        self.done_btn.grid(row=2, column=0, sticky="ew", pady=(12, 0))
         root.bind("<Return>", lambda _e: self.commit())
 
         if self.cfg.get("project_dir"):

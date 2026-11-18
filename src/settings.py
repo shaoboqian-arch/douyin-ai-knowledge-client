@@ -20,15 +20,16 @@ from ui_kit import (
 def _card(parent, title, title_font, sub_font, subtitle=""):
     outer = tk.Frame(parent, bg=CARD, highlightbackground=CARD_LINE,
                      highlightthickness=1)
-    inner = tk.Frame(outer, bg=CARD, padx=18, pady=14)
+    inner = tk.Frame(outer, bg=CARD, padx=20, pady=15)
     inner.pack(fill="both", expand=True)
     head = tk.Frame(inner, bg=CARD)
-    head.pack(fill="x", pady=(0, 12))
+    head.pack(fill="x", pady=(0, 8))
     tk.Label(head, text=title, font=title_font,
              bg=CARD, fg=TEXT, anchor="w").pack(side="left")
     if subtitle:
         tk.Label(head, text=subtitle, font=sub_font,
                  bg=CARD, fg=MUTED, anchor="w").pack(side="left", padx=(10, 0))
+    tk.Frame(inner, bg=CARD_LINE, height=1).pack(fill="x", pady=(0, 12))
     body = tk.Frame(inner, bg=CARD)
     body.pack(fill="both", expand=True)
     return outer, body
@@ -49,17 +50,18 @@ class Settings:
 
         root.title(f"设置 · {APP_NAME} {VERSION}")
         root.resizable(True, True)
+        root.minsize(780, 685)
         root.configure(bg=BG)
         apply_icon(root)
         apply_theme(root)
-        center(root, 880, 790)
+        center(root, 820, 685)
 
         f = tk.Frame(root, bg=BG, padx=24, pady=18)
         f.pack(fill="both", expand=True)
         f.columnconfigure(0, weight=1)
 
         tk.Label(f, text="设置", font=(family, 16, "bold"), bg=BG, fg=TEXT,
-                 anchor="w").grid(row=0, column=0, sticky="w", pady=(0, 14))
+                 anchor="w").grid(row=0, column=0, sticky="w", pady=(0, 12))
 
         # ---- 采集来源
         src_card, src = _card(f, "采集来源", (family, 11, "bold"), self.font_small)
@@ -70,7 +72,7 @@ class Settings:
         self.project = self._entry(src, 0)
         Tooltip(self.project.entry, self.project.get, font=self.font_small)
         self._btn(src, 0, "自动发现", self.autodetect, width=84, col=2)
-        self._btn(src, 0, "浏览…", self.pick_project, width=72, col=3, padx=(8, 0))
+        self._btn(src, 0, "浏览…", self.pick_project, width=84, col=3, padx=(8, 0))
         self._hint(src, 1, "需包含 extract_favorites.py 与 .venv")
 
         self._label(src, 2, "抖音账号")
@@ -102,8 +104,8 @@ class Settings:
         self._label(kb, 1, "库目录")
         self.kb = self._entry(kb, 1)
         Tooltip(self.kb.entry, self.kb.get, font=self.font_small)
-        self._btn(kb, 1, "浏览…", self.pick_kb, width=72, col=2)
-        self._btn(kb, 1, "打开", self.open_kb, width=64, col=3, padx=(8, 0))
+        self._btn(kb, 1, "浏览…", self.pick_kb, width=84, col=2)
+        self._btn(kb, 1, "打开", self.open_kb, width=84, col=3, padx=(8, 0))
 
         self.kb_stats = tk.Label(kb, text="", font=self.font_small, bg=CARD, fg=MUTED,
                                  anchor="w")
@@ -127,10 +129,14 @@ class Settings:
         self.mcp_body.columnconfigure(0, weight=1)
         tk.Label(self.mcp_body, text=mcpcfg.mcp_json_path(), font=self.font_small,
                  bg=CARD, fg=MUTED, anchor="w").grid(row=0, column=0, sticky="ew")
-        self.preview = tk.Text(self.mcp_body, height=6, font=("Consolas", 9),
+        code_box = tk.Frame(self.mcp_body, bg=SURFACE, highlightbackground=BORDER,
+                            highlightthickness=1)
+        code_box.grid(row=1, column=0, sticky="ew", pady=(6, 10))
+        code_box.columnconfigure(0, weight=1)
+        self.preview = tk.Text(code_box, height=6, font=("Consolas", 9),
                                bg=SURFACE, fg=TEXT, insertbackground=TEXT,
-                               relief="flat", wrap="none", padx=8, pady=6)
-        self.preview.grid(row=1, column=0, sticky="ew", pady=(6, 8))
+                               relief="flat", wrap="none", padx=10, pady=8)
+        self.preview.grid(row=0, column=0, sticky="ew")
         self.preview.insert("1.0", mcpcfg.fragment_text())
         self.preview.configure(state="disabled")
         row = tk.Frame(self.mcp_body, bg=CARD)
@@ -138,23 +144,23 @@ class Settings:
         for i, (label, cmd) in enumerate((("复制配置", self.copy_cfg),
                                           ("写入配置", self.write_cfg),
                                           ("测试连接", self.test_cfg))):
-            CapsuleButton(row, text=label, command=cmd, width=88, height=30,
+            CapsuleButton(row, text=label, command=cmd, width=88, height=32,
                           font=self.font_small).grid(row=0, column=i, padx=(0, 8))
         self.mcp_body.grid_remove()
 
         # ---- 状态 + 底部
         self.state = tk.Label(f, text="", font=self.font_small, bg=BG, fg=MUTED,
-                              anchor="w", wraplength=820, justify="left", takefocus=1)
+                              anchor="w", wraplength=760, justify="left", takefocus=1)
         self.state.grid(row=5, column=0, sticky="sw", pady=(12, 0))
         Tooltip(self.state, lambda: self.full_state, font=self.font_small)
 
         foot = tk.Frame(f, bg=BG)
-        foot.grid(row=6, column=0, sticky="ew", pady=(12, 0))
+        foot.grid(row=6, column=0, sticky="ew", pady=(10, 0))
         foot.columnconfigure(0, weight=1)
-        CapsuleButton(foot, text="保存", command=self.save, primary=True, width=120,
-                      height=40, font=(family, 10, "bold")).grid(row=0, column=1, padx=(0, 10))
-        CapsuleButton(foot, text="关闭", command=self.close, width=88,
-                      height=40, font=self.font_small).grid(row=0, column=2)
+        CapsuleButton(foot, text="保存", command=self.save, primary=True, width=116,
+                      height=36, font=(family, 10, "bold")).grid(row=0, column=1, padx=(0, 10))
+        CapsuleButton(foot, text="关闭", command=self.close, width=84,
+                      height=36, font=self.font_small).grid(row=0, column=2)
 
         self.project.insert(0, self.cfg.get("project_dir", ""))
         self.kb.insert(0, self.cfg.get("kb_dir", "") or
@@ -182,7 +188,7 @@ class Settings:
         return e
 
     def _btn(self, parent, row, text, cmd, width=72, col=2, padx=(0, 0)):
-        btn = CapsuleButton(parent, text=text, command=cmd, width=width, height=34,
+        btn = CapsuleButton(parent, text=text, command=cmd, width=width, height=36,
                             font=self.font_small)
         btn.grid(row=row, column=col, padx=padx, pady=(0, 2))
         return btn
@@ -265,8 +271,9 @@ class Settings:
             self.mcp_body.grid_remove()
             self.mcp_toggle.configure(text="展开")
         self.root.update_idletasks()
-        h = 790 + (230 if self.mcp_open else 0)
-        w = max(880, int(self.root.winfo_width() or 880))
+        h = 685 + (220 if self.mcp_open else 0)
+        w = max(820, int(self.root.winfo_width() or 820))
+        self.root.minsize(780, min(685, h))
         self.root.geometry(f"{w}x{h}")
 
     def autodetect(self):

@@ -19,7 +19,7 @@ from tkinter import filedialog
 
 from common import APP_NAME, EXE_NAME, VERSION, app_dir, is_frozen
 from ui_kit import (
-    BG, CYAN, ERR, MUTED,
+    BG, CARD, CARD_LINE, CYAN, ERR, MUTED,
     CapsuleButton, RoundedEntry, Tooltip, apply_icon, apply_theme, center, fonts,
 )
 
@@ -242,27 +242,35 @@ class SetupUI:
         root.configure(bg=BG)
         apply_icon(root)
         apply_theme(root)
-        center(root, 600, 210)
+        center(root, 600, 224)
 
-        f = tk.Frame(root, bg=BG, padx=20, pady=16)
+        f = tk.Frame(root, bg=BG, padx=22, pady=18)
         f.pack(fill="both", expand=True)
-        f.columnconfigure(1, weight=1)
+        f.columnconfigure(0, weight=1)
 
-        tk.Label(f, text="安装位置", font=font_main, bg=BG, fg=MUTED).grid(
-            row=0, column=0, sticky="w", pady=(2, 14))
-        self.dest = RoundedEntry(f, font=font_main, path=True, path_font=font_small)
-        self.dest.grid(row=0, column=1, sticky="ew", padx=12, pady=(2, 14))
+        card = tk.Frame(f, bg=CARD, highlightbackground=CARD_LINE, highlightthickness=1)
+        card.grid(row=0, column=0, sticky="ew")
+        card.columnconfigure(0, weight=1)
+        row = tk.Frame(card, bg=CARD, padx=16, pady=14)
+        row.grid(row=0, column=0, sticky="ew")
+        row.columnconfigure(1, weight=1)
+
+        tk.Label(row, text="安装位置", font=font_main, bg=CARD, fg=MUTED).grid(
+            row=0, column=0, sticky="w")
+        self.dest = RoundedEntry(row, font=font_main, path=True, path_font=font_small,
+                                 panel_bg=CARD)
+        self.dest.grid(row=0, column=1, sticky="ew", padx=12)
         self.dest.insert(0, preset or default_dir())
         self.dest.bind("<Return>", self._on_return)
-        CapsuleButton(f, text="浏览…", command=self.pick, width=84, height=36,
-                      font=font_small).grid(row=0, column=2, pady=(2, 14))
+        CapsuleButton(row, text="浏览…", command=self.pick, width=84, height=36,
+                      font=font_small, bg=CARD).grid(row=0, column=2)
 
         self.btn = CapsuleButton(f, text="安装", command=self.go, primary=True,
-                                 height=42, font=(family, 10, "bold"))
-        self.btn.grid(row=1, column=0, columnspan=3, sticky="ew")
+                                 height=40, font=(family, 10, "bold"))
+        self.btn.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         self.state = tk.Label(f, text="", font=font_small, bg=BG, fg=MUTED,
-                              anchor="w", wraplength=470, justify="left")
-        self.state.grid(row=2, column=0, columnspan=3, sticky="w", pady=(14, 0))
+                              anchor="w", wraplength=540, justify="left")
+        self.state.grid(row=2, column=0, sticky="w", pady=(12, 0))
         Tooltip(self.state, lambda: self.full_state, font=font_small)
         root.bind("<Return>", lambda _e: self.go())
         root.after_idle(self.dest.reveal_end)
