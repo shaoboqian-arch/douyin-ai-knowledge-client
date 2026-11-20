@@ -338,16 +338,14 @@ def preflight(frm="", to="", project_dir=None):
         if a in ("是", "否"):
             name = subcat.classify(r, ttext)["子类别"]
             by_sub[name] = by_sub.get(name, 0) + 1
+        wid = str(r.get("作品ID") or "")
+        reasons = manifest.gap_reasons(
+            r, "图集" if k == "图集" else "视频", concepts.get(wid), ttext)
         if a == "是":
             ai += 1
-            wid = str(r.get("作品ID") or "")
-            lacks = (not str(r.get("内容介绍") or "").strip()
-                     or not concepts.get(wid)
-                     or (k != "图集" and not os.path.isfile(os.path.join(tdir, f"{wid}.txt"))))
-            if lacks:
-                gap += 1
         elif a not in ("否",):
             pending += 1
+        if reasons:
             gap += 1
     return {
         "ok": True, "from": frm, "to": to,
@@ -613,7 +611,7 @@ def _sync_locked(dest, frm, to, cfg, st, on_event, on_progress, cancel):
         report = {"ok": False, "error": f"{type(e).__name__}: {e}", "rows": []}
     state.update(stage="done", ok=True, finished_at=_now(),
                  export={"total": res["total"], "stats": res["stats"],
-                         "gaps": len(res["gaps"])},
+                         "gaps": len(res["gaps"]), "gap_items": res["gaps"][:200]},
                  report=report)
     _write_state(batch, state)
     _emit(on_event, {"type": "phase", "name": "done"})
@@ -667,7 +665,7 @@ def export_only(dest, frm="", to="", on_event=None, on_progress=None, project_di
         "batch": batch, "range": {"from": frm, "to": to},
         "mode": "export_only",
         "export": {"total": res["total"], "stats": res["stats"],
-                   "gaps": len(res["gaps"])},
+                   "gaps": len(res["gaps"]), "gap_items": res["gaps"][:200]},
     }
     _write_state(batch, state)
     _emit(on_event, {"type": "phase", "name": "done"})
@@ -805,7 +803,7 @@ def _retry_locked(old, state, cfg, st, on_event, on_progress, cancel):
         report = {"ok": False, "error": f"{type(e).__name__}: {e}", "rows": []}
     new_state.update(stage="done", ok=True, finished_at=_now(),
                      export={"total": res["total"], "stats": res["stats"],
-                             "gaps": len(res["gaps"])},
+                             "gaps": len(res["gaps"]), "gap_items": res["gaps"][:200]},
                      report=report)
     _write_state(batch, new_state)
     _emit(on_event, {"type": "phase", "name": "done"})

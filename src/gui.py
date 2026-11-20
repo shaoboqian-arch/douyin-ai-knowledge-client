@@ -8,15 +8,17 @@ import threading
 import time
 import traceback
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 import config
 import engine
+import manifest
 import settings as settings_ui
 import setup_env
 from common import (
-    APP_NAME, PHASES, VERSION, DeferredCall, app_dir, format_gap_rows,
-    gap_heading, is_frozen, prefs_path,
+    APP_NAME, PHASES, VERSION, DeferredCall, app_dir,
+    build_ai_patch_prompt, format_gap_rows, gap_heading, is_frozen,
+    prefs_path, strip_gap_prefix,
 )
 from ui_kit import (
     ACCENT, BG, BORDER, CARD, CARD_LINE, CYAN, DONE_BG, ERR, ERR_BG, MUTED,
@@ -296,10 +298,14 @@ class App:
         self.patch_btn.grid(row=0, column=1, sticky="e")
         self.patch_btn.grid_remove()
         self.tree = ttk.Treeview(p, columns=("name", "reason"), show="headings", height=4)
-        self.tree.heading("name", text="条目")
-        self.tree.heading("reason", text="缺什么")
-        self.tree.column("name", width=400, anchor="w")
-        self.tree.column("reason", width=260, anchor="w")
+        self.tree.heading("name", text="条目", anchor="w")
+        self.tree.heading("reason", text="缺什么", anchor="w")
+        self.tree.column("name", width=480, minwidth=240, anchor="w", stretch=True)
+        self.tree.column("reason", width=180, minwidth=150, anchor="w", stretch=False)
+        self.tree.tag_configure("even", background=CARD)
+        self.tree.tag_configure("odd", background="#FAFBFD")
+        self._tree_font = tkfont.Font(root=self.root, font=self.font_small)
+        self._reclip_job = None
         sb = ttk.Scrollbar(p, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.grid(row=3, column=0, sticky="nsew")
@@ -347,6 +353,16 @@ class App:
             self.hint_label.configure(wraplength=hint_w)
         if int(self.gap_title.cget("wraplength") or 0) != hint_w:
             self.gap_title.configure(wraplength=hint_w)
+        if self.panel_visible and self.gaps:
+            try:
+                if getattr(self, "_reclip_job", None):
+                    self.root.after_cancel(self._reclip_job)
+            except (tk.TclError, ValueError):
+                pass
+            try:
+                self._reclip_job = self.root.after(80, self.refresh_table)
+            except tk.TclError:
+                pass
 
     def show_panel(self):
         self.panel_visible = True
@@ -372,6 +388,27 @@ class App:
                 mode = "pending"
             self.badges[k].set_mode(mode)
 
+    def _clip_px(self, text, max_px):
+        s = str(text or "")
+        if not s or max_px <= 20:
+            return s
+        try:
+            if self._tree_font.measure(s) <= max_px:
+                return s
+            lo, hi = 1, len(s)
+            best = ""
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                cand = s[:mid].rstrip() + "…"
+                if self._tree_font.measure(cand) <= max_px:
+                    best = cand
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            return best or "…"
+        except tk.TclError:
+            return s
+
     def refresh_table(self):
         for (g, key), lbl in self.cell.items():
             lbl.configure(text=f"{self.stats[g][key]:,}")
@@ -383,48 +420,86 @@ class App:
             self.patch_btn.grid_remove()
         self.tree.delete(*self.tree.get_children())
         self._gap_full = {}
-        for title, reason, full in format_gap_rows(self.gaps):
-            iid = self.tree.insert("", "end", values=(title, reason))
+        try:
+            col_w = int(self.tree.column("name", "width") or 480)
+            tw = int(self.tree.winfo_width() or 0)
+            if tw > 220:
+                reason_w = int(self.tree.column("reason", "width") or 180)
+                col_w = max(200, tw - reason_w - 28)
+        except (tk.TclError, TypeError, ValueError):
+            col_w = 480
+        max_px = max(140, col_w - 16)
+        for idx, (title, reason, full) in enumerate(format_gap_rows(self.gaps)):
+            shown_title = self._clip_px(title or "（无标题）", max_px)
+            shown_reason = strip_gap_prefix(reason)
+            iid = self.tree.insert(
+                "", "end", values=(shown_title, shown_reason),
+                tags=("odd" if idx % 2 else "even",))
             self._gap_full[iid] = full
         self.dirty = False
 
     def open_gaps(self):
-        """把待加工条目整理成一份可复制的待办，交给外部 AI 加工。"""
+        """把待加工条目整理成可复制的清单与 AI 补齐指令。"""
         if not self.gaps:
             return
         win = tk.Toplevel(self.root)
         win.title(f"待加工 · {len(self.gaps)} 条")
         win.configure(bg=BG)
-        win.geometry("760x560")
+        win.minsize(640, 420)
         apply_icon(win)
+        center(win, 760, 560)
+        win.bind("<Escape>", lambda _e: win.destroy())
         f = tk.Frame(win, bg=BG, padx=18, pady=14)
         f.pack(fill="both", expand=True)
+        f.columnconfigure(0, weight=1)
+        f.rowconfigure(2, weight=1)
         tk.Label(f, text=f"待加工 {len(self.gaps)} 条", font=(self.family, 13, "bold"),
-                 bg=BG, fg=TEXT, anchor="w").pack(fill="x")
+                 bg=BG, fg=TEXT, anchor="w").grid(row=0, column=0, sticky="ew")
         tk.Label(f, text="这些条目缺 AI 判定 / 转写 / 介绍 / 概念；补齐后点「仅导出」刷新批次，"
                         "不必重新采集。", font=self.font_small, bg=BG, fg=MUTED,
-                 anchor="w", justify="left").pack(fill="x", pady=(2, 10))
+                 anchor="w", justify="left").grid(row=1, column=0, sticky="ew", pady=(2, 10))
         box_wrap = tk.Frame(f, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
-        box_wrap.pack(fill="both", expand=True)
+        box_wrap.grid(row=2, column=0, sticky="nsew")
+        box_wrap.columnconfigure(0, weight=1)
+        box_wrap.rowconfigure(0, weight=1)
         box = tk.Text(box_wrap, font=self.font_small, bg=PANEL, fg=TEXT, relief="flat",
-                      wrap="word", padx=12, pady=10)
-        box.pack(fill="both", expand=True)
+                      wrap="word", padx=12, pady=10, height=10)
+        sb = ttk.Scrollbar(box_wrap, orient="vertical", command=box.yview)
+        box.configure(yscrollcommand=sb.set)
+        box.grid(row=0, column=0, sticky="nsew")
+        sb.grid(row=0, column=1, sticky="ns")
         lines = []
         for i, it in enumerate(self.gaps, 1):
-            lines.append(f"{i}. [{it.get('序号','')}] {it.get('标题','')}")
-            lines.append(f"   缺：{it.get('原因','')}")
+            title = (it.get("标题") or "").strip() or "（无标题）"
+            reason = strip_gap_prefix(it.get("原因", ""))
+            lines.append(f"{i}. [{it.get('序号','')}] {title}")
+            lines.append(f"   缺：{reason}")
             if it.get("作品链接"):
                 lines.append(f"   作品：{it['作品链接']}")
         box.insert("1.0", "\n".join(lines))
         box.configure(state="disabled")
         row = tk.Frame(f, bg=BG)
-        row.pack(fill="x", pady=(10, 0))
+        row.grid(row=3, column=0, sticky="ew", pady=(10, 2))
         row.columnconfigure(0, weight=1)
+        dlg_state = tk.Label(row, text="", font=self.font_small, fg=CYAN, bg=BG, anchor="w")
+        dlg_state.grid(row=0, column=0, sticky="w", padx=(0, 8))
+
+        def copy_ai():
+            project = config.load().get("project_dir", "")
+            prompt = build_ai_patch_prompt(self.gaps, project)
+            try:
+                win.clipboard_clear()
+                win.clipboard_append(prompt)
+                dlg_state.configure(text="已复制 AI 补齐指令")
+                self.set_state("AI 补齐指令已复制", CYAN)
+            except tk.TclError:
+                pass
 
         def copy():
             try:
                 win.clipboard_clear()
                 win.clipboard_append("\n".join(lines))
+                dlg_state.configure(text="已复制待加工清单")
                 self.set_state("待加工清单已复制", CYAN)
             except tk.TclError:
                 pass
@@ -435,12 +510,14 @@ class App:
             if p and os.path.isdir(p):
                 os.startfile(p)
 
+        CapsuleButton(row, text="复制 AI 指令", command=copy_ai, primary=True, width=116,
+                      height=32, font=self.font_small).grid(row=0, column=1, padx=(0, 8))
         CapsuleButton(row, text="复制清单", command=copy, width=92, height=32,
-                      font=self.font_small).grid(row=0, column=1, padx=(0, 8))
-        CapsuleButton(row, text="打开 work", command=open_work, width=96, height=32,
                       font=self.font_small).grid(row=0, column=2, padx=(0, 8))
+        CapsuleButton(row, text="打开 work", command=open_work, width=96, height=32,
+                      font=self.font_small).grid(row=0, column=3, padx=(0, 8))
         CapsuleButton(row, text="关闭", command=win.destroy, width=72, height=32,
-                      font=self.font_small).grid(row=0, column=3)
+                      font=self.font_small).grid(row=0, column=4)
 
     def _open_gap(self, _e=None):
         sel = self.tree.selection()
@@ -480,12 +557,14 @@ class App:
                     self.badges[name].set_mode("done")
 
     # ---------------------------------------------------------------- 环境
-    def env_check(self, seq=0):
-        self.q.put(("env", (engine.safe_call(engine.status), seq)))
+    def env_check(self, seq=0, preserve_state=False):
+        self.q.put(("env", (engine.safe_call(engine.status), seq, preserve_state)))
 
-    def refresh_env(self):
+    def refresh_env(self, preserve_state=False):
         self._env_seq += 1
-        threading.Thread(target=self.env_check, args=(self._env_seq,), daemon=True).start()
+        threading.Thread(
+            target=self.env_check, args=(self._env_seq, preserve_state), daemon=True,
+        ).start()
 
     def _on_root_return(self, event):
         if event.widget is self.btn:
@@ -521,7 +600,7 @@ class App:
                                state="normal")
             self.export_btn.configure(state="disabled")
 
-    def apply_env(self, payload):
+    def apply_env(self, payload, preserve_state=False):
         self.env_ready = bool(payload.get("ready"))
         self.rows_ok = bool(payload.get("rows_ok"))
         self.rows_mtime = payload.get("rows_mtime") or ""
@@ -537,7 +616,7 @@ class App:
             self.summary.configure(text="尚未建立知识库；首次使用先做一次「全仓同步」")
         if self.env_ready:
             self.show_env("")
-            if not self.busy:
+            if not self.busy and not preserve_state:
                 self.set_state(f"已就绪 · {acct}" if acct else "已就绪", CYAN)
         else:
             self.show_env(payload.get("message") or "环境未就绪")
@@ -604,6 +683,12 @@ class App:
 
     def close(self):
         self._range_call.destroy()
+        try:
+            if getattr(self, "_reclip_job", None):
+                self.root.after_cancel(self._reclip_job)
+                self._reclip_job = None
+        except (tk.TclError, ValueError):
+            pass
         if self.busy:
             if not messagebox.askyesno(APP_NAME, "整理还在进行，关闭会中止本轮且不生成交付。确定停止并退出？",
                                        parent=self.root):
@@ -875,7 +960,7 @@ class App:
                 self._show_hint("")
                 self.retry_btn.grid_remove()
         self._schedule_range_check()
-        self.refresh_env()
+        self.refresh_env(preserve_state=True)
         self.resize()
 
     def _show_hint(self, text):
@@ -909,11 +994,23 @@ class App:
             exp = st.get("export") or {}
             if exp.get("stats"):
                 self.stats = exp["stats"]
+            restored_gaps = exp.get("gap_items")
+            if restored_gaps is None and int(exp.get("gaps") or 0) > 0:
+                try:
+                    restored_gaps = manifest.read_report(batch).get("gaps") or []
+                except Exception:
+                    restored_gaps = []
+            if restored_gaps:
+                self.gaps = list(restored_gaps)
             self.dirty = True
             self.set_phase("done")
             self.show_panel()
             self.set_state("上次已完成；点「打开」查看批次", TEXT)
             self.refresh_table()
+            if self.gaps:
+                self._show_hint(
+                    f"待加工 {len(self.gaps):,} 条：明细见批次《导出报告》的待加工一节；"
+                    "补齐后点「仅导出」刷新批次。")
         elif (st.get("collect") or {}).get("gates_ok"):
             self.show_panel()
             self.set_state(st.get("error") or "上次未完成", WARN)
@@ -931,10 +1028,17 @@ class App:
                 elif kind == "event":
                     self.handle_event(payload)
                 elif kind == "env":
-                    data, seq = payload if isinstance(payload, tuple) else (payload, None)
+                    if isinstance(payload, tuple):
+                        if len(payload) >= 3:
+                            data, seq, preserve_state = payload[0], payload[1], bool(payload[2])
+                        else:
+                            data, seq = payload[0], payload[1]
+                            preserve_state = False
+                    else:
+                        data, seq, preserve_state = payload, None, False
                     if seq is not None and seq != self._env_seq:
                         continue        # 丢弃过期的环境检查结果
-                    self.apply_env(data)
+                    self.apply_env(data, preserve_state=preserve_state)
                 elif kind == "retry_done":
                     self._finish(payload, mode="retry")
                 elif kind == "export_done":

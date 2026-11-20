@@ -68,6 +68,18 @@ def test_format():
     check("不超过 200 时标题为全量计数", common.gap_heading(1) == "待加工 1")
     check("计数用千分位", common.gap_heading(1284, shown=2000) == "待加工 1,284",
           common.gap_heading(1284, shown=2000))
+    check("strip_gap_prefix 去掉前导缺字",
+          common.strip_gap_prefix("缺百字介绍、缺概念标引") == "百字介绍、概念标引")
+    check("strip_gap_prefix 保留 AI 判定未完成",
+          common.strip_gap_prefix("AI 判定未完成") == "AI 判定未完成")
+    prompt = common.build_ai_patch_prompt([
+        {"序号": "001", "作品ID": "999", "标题": "示例条目", "原因": "缺百字介绍、缺概念标引",
+         "作品链接": "https://example.invalid/video/999"},
+    ], project_dir="C:/demo/project")
+    check("build_ai_patch_prompt 含路径/目标文件/ID/链接且无缺缺重复",
+          all(k in prompt for k in ("C:/demo/project", "merged_ai.jsonl", "作品ID=999",
+                                    "缺：百字介绍、概念标引", "https://example.invalid/video/999")),
+          prompt)
 
 
 def test_pointer():
@@ -177,6 +189,14 @@ def test_wiring():
     check("设置页未保存关闭会询问", "有未保存的更改" in settings)
     inst = open(os.path.join(APP, "src", "installer.py"), encoding="utf-8").read()
     check("安装向导未改覆盖口径文案", "默认不覆盖本机已装程序" not in inst)
+    check("同步结束后保留状态栏结果不被就绪覆盖",
+          "self.refresh_env(preserve_state=True)" in gui)
+    check("待加工表头左对齐并区分两列",
+          'self.tree.heading("name", text="条目", anchor="w")' in gui
+          and 'self.tree.heading("reason", text="缺什么", anchor="w")' in gui)
+    check("重启恢复待加工列表", "restored_gaps" in gui and "gap_items" in gui)
+    check("补加工弹窗含滚动条与 AI 补齐指令",
+          "ttk.Scrollbar(box_wrap" in gui and "build_ai_patch_prompt" in gui)
 
 
 def test_tk():

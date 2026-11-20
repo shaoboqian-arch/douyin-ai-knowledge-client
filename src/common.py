@@ -143,6 +143,57 @@ def gap_heading(n, shown=200):
     return f"待加工 {n:,}"
 
 
+def strip_gap_prefix(reason):
+    """去掉缺项词前多余的「缺」字，避免拼成「缺：缺...」。"""
+    parts = []
+    for tok in str(reason or "").split("、"):
+        tok = tok.strip()
+        if tok.startswith("缺") and len(tok) > 1:
+            tok = tok[1:]
+        if tok:
+            parts.append(tok)
+    return "、".join(parts)
+
+
+def build_ai_patch_prompt(gaps, project_dir=""):
+    """把待加工清单整理成可直接发给 AI 助手的补齐指令。"""
+    items = list(gaps or [])
+    lines = [
+        f"请帮我补齐以下 {len(items)} 条抖音收藏的待加工字段：",
+        "",
+    ]
+    if project_dir:
+        lines.append(f"项目目录：{project_dir}")
+    lines += [
+        "目标文件：work/merged_ai.jsonl（AI 判定与核心内容归纳）、"
+        "work/concepts_merged.json（概念标引）、work/intros_100.json（百字介绍）、"
+        "work/transcripts/（语音转写）",
+        "",
+        "待加工明细：",
+    ]
+    for i, it in enumerate(items, 1):
+        seq = it.get("序号", "")
+        wid = it.get("作品ID", "")
+        title = clip_text(str(it.get("标题") or ""), 80) or "（无标题）"
+        reason = strip_gap_prefix(it.get("原因", ""))
+        link = clip_text(str(it.get("作品链接") or ""), 10 ** 9)
+        head = f"{i}. [{seq}]"
+        if wid:
+            head += f" 作品ID={wid}"
+        head += f" {title}"
+        lines.append(head)
+        if reason:
+            lines.append(f"   缺：{reason}")
+        if link:
+            lines.append(f"   作品：{link}")
+    lines += [
+        "",
+        "补齐完成后，请在项目目录依次执行 make_tables.py、gen_obsidian.py、"
+        "audit_obsidian.py，或回到客户端点击「仅导出」刷新交付批次。",
+    ]
+    return "\n".join(lines)
+
+
 def pointer_inside(x, y, width, height):
     """松开时指针是否仍在按钮矩形内（用于取消拖出后的点击）。"""
     try:

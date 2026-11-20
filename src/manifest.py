@@ -30,6 +30,49 @@ RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | \
 CATS = ("AI编程与开发", "AI效率办公", "大模型与行业资讯", "AI绘画与图像",
         "其他AI相关", "AI视频与数字人", "科普与学习")
 
+NO_SPEECH_MARKERS = {"[无有效语音]"}
+FAILED_TRANSCRIPT_MARKERS = {"[地址刷新失败]", "[下载失败]", "[音频提取失败]"}
+MIN_SPEECH_CHARS = 15
+
+
+def transcript_state(text):
+    """判定转写稿状态：missing / no_speech / valid。
+
+    · 失败标记（地址刷新/下载/音频提取失败）或空文本视为 missing（缺语音转写）
+    · `[无有效语音]` 或有效字数极少的无口播字幕视为 no_speech（无需语音转写/百字介绍）
+    """
+    s = str(text or "").strip()
+    if not s or s in FAILED_TRANSCRIPT_MARKERS:
+        return "missing"
+    if s in NO_SPEECH_MARKERS:
+        return "no_speech"
+    eff = sum(1 for ch in s if ch.isalnum())
+    return "no_speech" if eff < MIN_SPEECH_CHARS else "valid"
+
+
+def gap_reasons(row, kind, concepts, transcript=""):
+    """返回一条收藏的待加工原因列表（供 manifest 与 engine.preflight 共用）。"""
+    ai = str(row.get("AI相关") or "").strip()
+    if ai not in ("是", "否"):
+        return ["AI 判定未完成"]
+    if ai != "是":
+        return []
+    intro = str(row.get("内容介绍") or "").strip()
+    core = str(row.get("核心内容归纳") or "").strip()
+    tstate = transcript_state(transcript) if kind != "图集" else "no_speech"
+    reasons = []
+    if kind != "图集" and tstate == "missing":
+        reasons.append("语音转写")
+    if kind != "图集" and tstate in ("valid", "missing"):
+        if not intro:
+            reasons.append("百字介绍")
+    else:
+        if not intro and not core:
+            reasons.append("内容归纳")
+    if not concepts:
+        reasons.append("概念标引")
+    return reasons
+
 
 
 def clean_name(text, limit=48):
@@ -121,6 +164,9 @@ def _frontmatter(row, concepts, sub="", sub_hint="", extra=None):
 
 def _note_body(row, concepts, transcript, intro):
     parts = [f"# {str(row.get('标题/文案') or '（无标题）').strip()[:120]}", ""]
+    core = str(row.get("核心内容归纳") or "").strip()
+    if core:
+        parts += [f"> **一句话归纳**：{core}", ""]
     if intro:
         parts += ["## 内容介绍", "", intro.strip(), ""]
     if concepts:
@@ -128,7 +174,7 @@ def _note_body(row, concepts, transcript, intro):
     desc = str(row.get("标题/文案") or "").strip()
     if desc:
         parts += ["## 原文文案", "", desc, ""]
-    if transcript:
+    if transcript_state(transcript) == "valid":
         parts += ["## 语音转写（节选）", "",
                   transcript.strip()[:1500] + ("…" if len(transcript.strip()) > 1500 else ""), ""]
     parts += ["## 出处", "",
@@ -197,17 +243,8 @@ def build(rows, batch_dir, frm="", to="", transcripts_dir="", concepts_map=None,
                     transcript = ""
 
         # 待加工判定（每一项都要能落到具体文件上，不写笼统的“失败”）
-        reasons = []
         ai = str(row.get("AI相关") or "").strip()
-        if ai not in ("是", "否"):
-            reasons.append("AI 判定未完成")
-        else:
-            if ai == "是" and not intro:
-                reasons.append("缺百字介绍")
-            if ai == "是" and not concepts:
-                reasons.append("缺概念标引")
-            if ai == "是" and kind == "视频" and not transcript:
-                reasons.append("缺语音转写")
+        reasons = gap_reasons(row, kind, concepts, transcript)
 
         cls = subcat.classify(row, transcript) if str(ai) in ("是", "否") else \
             {"子类别": "", "依据": ""}
@@ -373,7 +410,7 @@ def _write_report_md(batch_dir, frm, to, stats, gaps, items, files):
     lines += [f"## 待加工（{len(gaps)}）", ""]
     if gaps:
         for g in gaps:
-            lines.append(f"- **{g.get('序号','')}** {_md(str(g.get('标题',''))[:80])}")
+            lines.append(f"- **{g.get('序号','')}** {_md(str(g.get('标题') or '（无标题）')[:80])}")
             lines.append(f"  - 缺：{_md(g.get('原因',''))}")
     else:
         lines.append("本批没有待加工条目。")
@@ -537,6 +574,12 @@ def read_report(batch_dir):
                           "AI类别": cat, "子类别": sub,
                           "作品ID": m.group("wid") or "", "状态": m.group("status"),
                           "输出路径": m.group("path")})
+
+    by_seq = {it["序号"]: it for it in items}
+    for g in gaps:
+        it = by_seq.get(g.get("序号"))
+        if it and it.get("作品ID"):
+            g["作品ID"] = it["作品ID"]
 
     return {"title": "导出报告", "meta": meta, "counts": counts, "subs": subs,
             "gaps": gaps, "items": items}

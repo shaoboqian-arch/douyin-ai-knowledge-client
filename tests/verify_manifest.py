@@ -59,6 +59,21 @@ def rows_for_test():
          "作品链接": "https://www.douyin.com/video/1005", "收藏夹": "",
          "AI相关": "是", "AI类别": "其他AI相关", "核心内容归纳": "旧",
          "内容介绍": "旧的介绍", "概念": ""},
+        {"标题/文案": "有转写缺介绍", "类型": "视频", "作者": "作者己",
+         "发布时间": "2026-10-15 10:00:00", "点赞数": 88, "作品ID": "1006",
+         "作品链接": "https://www.douyin.com/video/1006", "收藏夹": "",
+         "AI相关": "是", "AI类别": "AI编程与开发", "核心内容归纳": "有归纳",
+         "内容介绍": "", "概念": ""},
+        {"标题/文案": "无语音纯画面", "类型": "视频", "作者": "作者庚",
+         "发布时间": "2026-10-12 10:00:00", "点赞数": 66, "作品ID": "1007",
+         "作品链接": "https://www.douyin.com/video/1007", "收藏夹": "",
+         "AI相关": "是", "AI类别": "AI绘画与图像", "核心内容归纳": "纯画面展示",
+         "内容介绍": "", "概念": ""},
+        {"标题/文案": "转写下载失败", "类型": "视频", "作者": "作者辛",
+         "发布时间": "2026-10-10 10:00:00", "点赞数": 20, "作品ID": "1008",
+         "作品链接": "https://www.douyin.com/video/1008", "收藏夹": "",
+         "AI相关": "是", "AI类别": "AI效率办公", "核心内容归纳": "有归纳",
+         "内容介绍": "已有百字介绍", "概念": ""},
     ]
 
 
@@ -75,10 +90,20 @@ def main():
         tdir = os.path.join(tmp, "transcripts")
         os.makedirs(tdir, exist_ok=True)
         open(os.path.join(tdir, "1001.txt"), "w", encoding="utf-8").write("转写稿" * 50)
+        open(os.path.join(tdir, "1006.txt"), "w", encoding="utf-8").write(
+            "这是一段足够长的有效视频语音转写内容，用于验证缺百字介绍判断。")
+        open(os.path.join(tdir, "1007.txt"), "w", encoding="utf-8").write("[无有效语音]")
+        open(os.path.join(tdir, "1008.txt"), "w", encoding="utf-8").write("[下载失败]")
         target = os.path.join(tmp, "batch")
         res = manifest.build(rows_for_test(), target, "2026-10-01", "2026-11-30",
                              transcripts_dir=tdir,
-                             concepts_map={"1001": ["提示词工程"], "1001B": ["提示词工程"]})
+                             concepts_map={
+                                 "1001": ["提示词工程"],
+                                 "1001B": ["提示词工程"],
+                                 "1006": ["提示词工程"],
+                                 "1007": ["提示词工程"],
+                                 "1008": ["提示词工程"],
+                             })
         assert res.get("ok"), res
     try:
         print("== 报告结构 ==")
@@ -95,7 +120,7 @@ def main():
         print("== 明细 vs 磁盘 ==")
         check("明细行数 == 笔记文件数", len(items) == len(mds), f"{len(items)} vs {len(mds)}")
         check("序号唯一", len({r["序号"] for r in items}) == len(items))
-        seqs = [r["序号"] for r in items]
+        seqs = sorted((r["序号"] for r in items), key=lambda s: int(s) if s.isdigit() else 0)
         check("序号连续从 001 起", seqs == [f"{i:03d}" for i in range(1, len(seqs) + 1)],
               str(seqs[:4]))
         missing = [r["输出路径"] for r in items
@@ -129,9 +154,20 @@ def main():
               c["视频"]["gap"] + c["图集"]["gap"] == len(rep["gaps"]),
               f"{c['视频']['gap']}+{c['图集']['gap']} vs {len(rep['gaps'])}")
         reasons = {g["序号"]: g["原因"] for g in rep["gaps"]}
-        check("图集缺介绍/概念被标出",
-              "缺百字介绍" in reasons.get("003", "") and "缺概念标引" in reasons.get("003", ""),
+        reasons_by_id = {g.get("作品ID"): g["原因"] for g in rep["gaps"] if g.get("作品ID")}
+        check("图集缺概念被标出且不误报百字介绍",
+              "概念标引" in reasons.get("003", "") and "百字介绍" not in reasons.get("003", ""),
               str(reasons))
+        check("有有效转写但缺介绍的视频被标百字介绍",
+              reasons_by_id.get("1006") == "百字介绍", str(reasons_by_id))
+        check("无有效语音且有归纳的视频不误报待加工",
+              "1007" not in reasons_by_id, str(reasons_by_id))
+        check("下载失败的转写占位被识别为缺语音转写",
+              "语音转写" in reasons_by_id.get("1008", ""), str(reasons_by_id))
+        md1007 = next((it for it in items if it.get("作品ID") == "1007"), None)
+        t1007 = open(os.path.join(target, md1007["输出路径"]), encoding="utf-8").read() if md1007 else ""
+        check("无有效语音视频笔记含一句话归纳且不写入无有效语音正文",
+              "一句话归纳" in t1007 and "[无有效语音]" not in t1007, t1007[:300])
 
         print("== 笔记内容 ==")
         need = ("标题:", "作者:", "发布日期:", "类别:", "子类别:", "作品ID:")
