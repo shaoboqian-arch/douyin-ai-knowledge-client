@@ -81,6 +81,20 @@ def test_format():
                                     "缺：百字介绍、概念标引", "https://example.invalid/video/999")),
           prompt)
 
+    import engine
+    tmp_p = tempfile.mkdtemp(prefix="dysync-pre-")
+    try:
+        kb_p = _fixture.make_kb(tmp_p)
+        proj_p, _ = _fixture.make_project(tmp_p)
+        os.environ["DYSYNC_SETTINGS"] = _fixture.configure(tmp_p, proj_p, kb_p)
+        pre = engine.preflight()
+        check("preflight 返回 stats 与 gaps",
+              pre.get("ok") and isinstance(pre.get("stats"), dict) and isinstance(pre.get("gaps"), list)
+              and sum(pre["stats"][g]["total"] for g in ("video", "album")) == pre.get("in_range"),
+              str(pre.get("stats")))
+    finally:
+        shutil.rmtree(tmp_p, ignore_errors=True)
+
 
 def test_pointer():
     import common
@@ -197,6 +211,10 @@ def test_wiring():
     check("重启恢复待加工列表", "restored_gaps" in gui and "gap_items" in gui)
     check("补加工弹窗含滚动条与 AI 补齐指令",
           "ttk.Scrollbar(box_wrap" in gui and "build_ai_patch_prompt" in gui)
+    check("顶栏新增刷新数据且无收起按钮",
+          "def refresh_data(" in gui and "def _apply_data_refresh(" in gui
+          and 'text="刷新数据"' in gui and 'text="导出文件夹"' in gui
+          and 'text="打开文件夹"' in gui and 'text="收起"' not in gui)
 
 
 def test_tk():

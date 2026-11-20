@@ -186,9 +186,16 @@ def test_deferred(root):
           and "self._range_call.run(frm, to)" in hint_fn.group(1)
           and "DeferredCall(root, engine.preflight" in src_gui,
           "防抖回调内仍有同步调用")
+    start_fn = re.search(r"    def start\(self\):(.*?)\n    def ", src_gui, re.S)
+    export_fn = re.search(r"    def start_export\(self\):(.*?)\n    def ", src_gui, re.S)
+    refresh_fn = re.search(r"    def refresh_data\(self\):(.*?)\n    def ", src_gui, re.S)
     check("点击动作复用预检缓存",
-          src_gui.count("self._preflight_cached(frm, to)") == 2
-          and src_gui.count("engine.safe_call(engine.preflight") == 1)
+          bool(start_fn) and bool(export_fn) and bool(refresh_fn)
+          and "self._preflight_cached(frm, to)" in start_fn.group(1)
+          and "self._preflight_cached(frm, to)" in export_fn.group(1)
+          and "engine.safe_call(engine.preflight" not in start_fn.group(1)
+          and "engine.safe_call(engine.preflight" not in export_fn.group(1)
+          and "threading.Thread(target=work" in refresh_fn.group(1))
     check("settings 不再同步调用 engine_status",
           'stats = (engine_status() or {}).get("kb_stats")' not in src_set
           and "DeferredCall(root, engine_status" in src_set)

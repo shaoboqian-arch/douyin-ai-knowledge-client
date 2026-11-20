@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""主界面：先写清「导出到哪、导出哪段」，再给两个明确的动作（全仓同步 / 仅导出）。"""
+"""主界面：先写清「导出到哪、导出哪段」，再按职责分开动作（全仓同步 / 刷新数据 / 导出文件夹）。"""
 import datetime as dt
 import json
 import os
@@ -30,6 +30,7 @@ from ui_kit import (
 W = 780
 BASE_H = 338
 PANEL_H = 392
+PANEL_COMPACT_H = 238
 HINT_H = 76
 
 GROUPS = (("video", "视频"), ("album", "图集"), ("ai", "其中 · AI 笔记"))
@@ -83,6 +84,7 @@ class App:
         self.root = root
         self.q = queue.Queue()
         self.busy = False
+        self._refreshing = False
         self.cancel = threading.Event()
         self.dirty = False
         self.panel_visible = False
@@ -133,8 +135,14 @@ class App:
         Tooltip(self.btn, lambda: "必做的一次全收藏扫描：扫完重建知识库，再导出所选范围；"
                                   "每条收藏约 1 秒，用时随收藏数等比变化",
                 font=font_small)
-        CapsuleButton(head, text="设置", command=self.open_settings, width=72,
-                      height=34, font=font_small).grid(row=0, column=2, sticky="e")
+        self.refresh_btn = CapsuleButton(head, text="刷新数据", command=self.refresh_data,
+                                         width=88, height=34, font=font_small)
+        self.refresh_btn.grid(row=0, column=2, sticky="e", padx=(0, 8))
+        Tooltip(self.refresh_btn,
+                lambda: "重读本机项目与知识库最新结果，刷新计数与待加工清单，不联网采集、不生成文件夹",
+                font=font_small)
+        CapsuleButton(head, text="设置", command=self.open_settings, width=68,
+                      height=34, font=font_small).grid(row=0, column=3, sticky="e")
 
         self.summary = tk.Label(f, text="正在读取知识库现状…", font=font_small,
                                 bg=BG, fg=MUTED, anchor="w")
@@ -150,12 +158,12 @@ class App:
         self.dest = RoundedEntry(body, font=font_main, path=True, path_font=font_small,
                                  panel_bg=CARD)
         self.dest.grid(row=0, column=1, sticky="ew", padx=(14, 10), pady=(0, 12))
-        CapsuleButton(body, text="浏览…", command=self.pick, width=88, height=36,
+        CapsuleButton(body, text="浏览…", command=self.pick, width=100, height=36,
                       font=font_small).grid(row=0, column=2, pady=(0, 12))
-        self.export_btn = CapsuleButton(body, text="仅导出", command=self.start_export,
-                                        width=88, height=36, font=font_small)
+        self.export_btn = CapsuleButton(body, text="导出文件夹", command=self.start_export,
+                                        width=100, height=36, font=font_small)
         self.export_btn.grid(row=1, column=2, pady=(0, 2))
-        self.export_hint = "用项目里已有的数据写批次，不采集、不联网，秒级完成"
+        self.export_hint = "按所选日期范围把本地整理结果写出成新文件夹，不采集、不联网，秒级完成"
         Tooltip(self.export_btn, lambda: self.export_hint, font=font_small)
 
         tk.Label(body, text="作品发布日期", font=font_main, bg=CARD, fg=MUTED).grid(
@@ -186,7 +194,7 @@ class App:
 
         self.first_hint = tk.Label(
             f, text="首次使用：先做一次「全仓同步」（必做的全收藏扫描，每条约 1 秒）\n"
-                    "完成后「仅导出」才可用",
+                    "完成后「导出文件夹」才可用",
             font=font_small, bg=BG, fg=WARN, anchor="w", justify="left")
         self.first_hint.grid(row=3, column=0, sticky="ew", pady=(10, 0))
         self.first_hint.grid_remove()
@@ -213,8 +221,8 @@ class App:
                                        width=64, height=32, font=font_small)
         self.retry_btn.grid(row=0, column=3, padx=(6, 0))
         self.retry_btn.grid_remove()
-        self.open_btn = CapsuleButton(sf, text="打开", command=self.open_result,
-                                      width=64, height=32, font=font_small)
+        self.open_btn = CapsuleButton(sf, text="打开文件夹", command=self.open_result,
+                                      width=96, height=32, font=font_small)
         self.open_btn.grid(row=0, column=4, padx=(6, 0))
         self.open_btn.grid_remove()
         Tooltip(self.state, lambda: self.full_state, font=font_small)
@@ -263,8 +271,6 @@ class App:
             b = PhaseBadge(hdr, text=label, font=self.font_small, width=66, height=24, bg=CARD)
             b.grid(row=0, column=i, padx=(0, 6))
             self.badges[key] = b
-        CapsuleButton(hdr, text="收起", command=self.hide_panel,
-                      width=58, height=26, font=self.font_small, bg=CARD).grid(row=0, column=6, sticky="e")
 
         tbl = tk.Frame(p, bg=BG, highlightbackground=CARD_LINE, highlightthickness=1,
                        padx=16, pady=10)
@@ -306,10 +312,16 @@ class App:
         self.tree.tag_configure("odd", background="#FAFBFD")
         self._tree_font = tkfont.Font(root=self.root, font=self.font_small)
         self._reclip_job = None
-        sb = ttk.Scrollbar(p, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
+        self.tree_sb = ttk.Scrollbar(p, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self.tree_sb.set)
         self.tree.grid(row=3, column=0, sticky="nsew")
-        sb.grid(row=3, column=1, sticky="ns")
+        self.tree_sb.grid(row=3, column=1, sticky="ns")
+        self.tree.grid_remove()
+        self.tree_sb.grid_remove()
+        self.gap_empty = tk.Label(
+            p, text="全部条目已就绪，无待加工项",
+            font=self.font_small, fg=CYAN, bg=CARD, anchor="w")
+        self.gap_empty.grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 4))
         self._gap_full = {}
         self.tree.bind("<ButtonRelease-1>", self._open_gap)
         self.tree.bind("<Return>", self._open_gap)
@@ -332,20 +344,25 @@ class App:
         if self.first_hint.winfo_manager():
             h += 40          # 两行提示 + 上边距；24 会把底部状态行裁掉
         if self.panel_visible:
-            h += PANEL_H
+            has_list = bool(self.gaps)
+            h += PANEL_H if has_list else PANEL_COMPACT_H
             if self.hint_visible:
                 h += HINT_H
+        else:
+            has_list = False
+        prev_list = getattr(self, "_panel_has_list", None)
+        self._panel_has_list = has_list
         self.root.minsize(W, h)
         self.root.update_idletasks()
         w = max(W, int(self.root.winfo_width() or W))
         cur_h = int(self.root.winfo_height() or 0)
-        if cur_h < h or not self.panel_visible:
+        if cur_h < h or not self.panel_visible or (prev_list is True and not has_list):
             self.root.geometry(f"{w}x{h}")
 
     def _on_configure(self, event):
         if event.widget is not self.root:
             return
-        state_w = max(200, int(event.width) - 340)
+        state_w = max(180, int(event.width) - 380)
         hint_w = max(220, int(event.width) - 100)
         if int(self.state.cget("wraplength") or 0) != state_w:
             self.state.configure(wraplength=state_w)
@@ -414,29 +431,41 @@ class App:
             lbl.configure(text=f"{self.stats[g][key]:,}")
         n = len(self.gaps)
         self.gap_title.configure(text=gap_heading(n), fg=ERR if n else MUTED)
-        if n:
-            self.patch_btn.grid()
-        else:
-            self.patch_btn.grid_remove()
         self.tree.delete(*self.tree.get_children())
         self._gap_full = {}
-        try:
-            col_w = int(self.tree.column("name", "width") or 480)
-            tw = int(self.tree.winfo_width() or 0)
-            if tw > 220:
-                reason_w = int(self.tree.column("reason", "width") or 180)
-                col_w = max(200, tw - reason_w - 28)
-        except (tk.TclError, TypeError, ValueError):
-            col_w = 480
-        max_px = max(140, col_w - 16)
-        for idx, (title, reason, full) in enumerate(format_gap_rows(self.gaps)):
-            shown_title = self._clip_px(title or "（无标题）", max_px)
-            shown_reason = strip_gap_prefix(reason)
-            iid = self.tree.insert(
-                "", "end", values=(shown_title, shown_reason),
-                tags=("odd" if idx % 2 else "even",))
-            self._gap_full[iid] = full
+        if n:
+            self.gap_empty.grid_remove()
+            self.patch_btn.grid()
+            self.tree.grid()
+            self.tree_sb.grid()
+            try:
+                col_w = int(self.tree.column("name", "width") or 480)
+                tw = int(self.tree.winfo_width() or 0)
+                if tw > 220:
+                    reason_w = int(self.tree.column("reason", "width") or 180)
+                    col_w = max(200, tw - reason_w - 28)
+            except (tk.TclError, TypeError, ValueError):
+                col_w = 480
+            max_px = max(140, col_w - 16)
+            for idx, (title, reason, full) in enumerate(format_gap_rows(self.gaps)):
+                shown_title = self._clip_px(title or "（无标题）", max_px)
+                shown_reason = strip_gap_prefix(reason)
+                iid = self.tree.insert(
+                    "", "end", values=(shown_title, shown_reason),
+                    tags=("odd" if idx % 2 else "even",))
+                self._gap_full[iid] = full
+        else:
+            self.patch_btn.grid_remove()
+            self.tree.grid_remove()
+            self.tree_sb.grid_remove()
+            self.gap_empty.configure(
+                text="整理进行中，完成后更新待加工清单" if self.busy else "全部条目已就绪，无待加工项",
+                fg=MUTED if self.busy else CYAN,
+            )
+            self.gap_empty.grid()
         self.dirty = False
+        if self.panel_visible:
+            self.resize()
 
     def open_gaps(self):
         """把待加工条目整理成可复制的清单与 AI 补齐指令。"""
@@ -455,7 +484,7 @@ class App:
         f.rowconfigure(2, weight=1)
         tk.Label(f, text=f"待加工 {len(self.gaps)} 条", font=(self.family, 13, "bold"),
                  bg=BG, fg=TEXT, anchor="w").grid(row=0, column=0, sticky="ew")
-        tk.Label(f, text="这些条目缺 AI 判定 / 转写 / 介绍 / 概念；补齐后点「仅导出」刷新批次，"
+        tk.Label(f, text="这些条目缺 AI 判定 / 转写 / 介绍 / 概念；补齐后点「刷新数据」核对状态，或点「导出文件夹」写出新批次，"
                         "不必重新采集。", font=self.font_small, bg=BG, fg=MUTED,
                  anchor="w", justify="left").grid(row=1, column=0, sticky="ew", pady=(2, 10))
         box_wrap = tk.Frame(f, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
@@ -569,6 +598,8 @@ class App:
     def _on_root_return(self, event):
         if event.widget is self.btn:
             self.primary_action()
+        elif event.widget is self.refresh_btn:
+            self.refresh_data()
         elif event.widget is self.export_btn:
             self.start_export()
         return None
@@ -585,20 +616,74 @@ class App:
     def _sync_primary(self):
         if self.busy:
             self.btn.configure(text="停止", command=self.stop, state="normal")
+            self.refresh_btn.configure(state="disabled")
             self.export_btn.configure(state="disabled")
         elif self.env_ready:
             self.btn.configure(text="⚠️ 全仓同步", command=self.start, state="normal")
-            self.export_btn.configure(state="normal" if self.rows_ok else "disabled")
+            self.refresh_btn.configure(state="disabled" if self._refreshing else "normal")
+            self.export_btn.configure(state="normal" if (self.rows_ok and not self._refreshing) else "disabled")
             if not self.rows_ok:
-                self.export_hint = "还没有整理结果：先点右上角「全仓同步」跑一次"
+                self.export_hint = "还没有整理结果：先点右上角「⚠️ 全仓同步」跑一次"
             else:
                 stamp = self.rows_mtime
-                self.export_hint = (f"用现有数据写批次（截至 {stamp}），不采集、不联网，秒级完成"
-                                    if stamp else "用项目里已有的数据写批次，不采集、不联网")
+                self.export_hint = (f"按所选日期范围把本地整理结果写出成新文件夹（截至 {stamp}），不采集、不联网，秒级完成"
+                                    if stamp else "按所选日期范围把本地整理结果写出成新文件夹，不采集、不联网")
         else:
             self.btn.configure(text="初始化本机环境", command=self.open_setup_env,
                                state="normal")
+            self.refresh_btn.configure(state="disabled" if self._refreshing else "normal")
             self.export_btn.configure(state="disabled")
+
+    def refresh_data(self):
+        """只读重读本机项目与知识库最新数据，刷新计数与待加工清单，不采集、不建文件夹。"""
+        if self.busy or self._refreshing:
+            return
+        ok, frm, to, err = self._range_values()
+        if not ok:
+            self.set_state(err, ERR)
+            return
+        self._refreshing = True
+        self._last_preflight = None
+        self._sync_primary()
+        self.set_state("正在读取本机最新数据…", MUTED)
+
+        def work():
+            st = engine.safe_call(engine.status)
+            pre = engine.safe_call(engine.preflight, frm, to) if st.get("rows_ok") else None
+            self.q.put(("data_refreshed", (st, pre, frm, to)))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _apply_data_refresh(self, payload):
+        st, pre, frm, to = payload
+        self._refreshing = False
+        self.apply_env(st, preserve_state=True)
+        if pre and pre.get("ok"):
+            self._on_preflight(pre, (frm, to))
+            self.stats = pre.get("stats") or _blank_stats()
+            self.gaps = pre.get("gaps") or []
+            if not self.panel_visible:
+                for k, badge in self.badges.items():
+                    badge.set_mode("done" if k == "check" else "pending")
+                self.show_panel()
+            else:
+                self.refresh_table()
+            self.dirty = True
+            total = int(pre.get("in_range") or 0)
+            gaps_n = len(self.gaps)
+            self.set_state(f"已刷新本地数据 · {total:,} 条 · 待加工 {gaps_n:,}", CYAN)
+            self._show_hint(
+                f"待加工 {gaps_n:,} 条：点右侧「补加工」复制清单或 AI 指令，"
+                "补齐后点「刷新数据」核对状态，或点「导出文件夹」写出新批次。"
+                if gaps_n else ""
+            )
+        elif not st.get("rows_ok"):
+            self.set_state("已刷新：还没有整理结果，请先点「⚠️ 全仓同步」", WARN)
+            self._schedule_range_check()
+        elif pre:
+            self.set_state(pre.get("error") or "刷新失败", ERR)
+        self._sync_primary()
+        self.resize()
 
     def apply_env(self, payload, preserve_state=False):
         self.env_ready = bool(payload.get("ready"))
@@ -942,7 +1027,7 @@ class App:
                 new = int(payload.get("new_count") or 0)
                 self.set_state(f"完成 · {total:,} 条 · 新增 {new:,} · 待加工 {gaps:,}", CYAN)
             self._show_hint(f"待加工 {gaps:,} 条：明细见批次《导出报告》的待加工一节；"
-                            "补齐后点「仅导出」刷新批次。" if gaps else "")
+                            "补齐后点「刷新数据」核对状态，或点「导出文件夹」写出新批次。" if gaps else "")
         else:
             err = payload.get("error") or "操作失败"
             self.set_state(err, ERR)
@@ -1005,12 +1090,12 @@ class App:
             self.dirty = True
             self.set_phase("done")
             self.show_panel()
-            self.set_state("上次已完成；点「打开」查看批次", TEXT)
+            self.set_state("上次已完成；点「打开文件夹」查看批次", TEXT)
             self.refresh_table()
             if self.gaps:
                 self._show_hint(
                     f"待加工 {len(self.gaps):,} 条：明细见批次《导出报告》的待加工一节；"
-                    "补齐后点「仅导出」刷新批次。")
+                    "补齐后点「刷新数据」核对状态，或点「导出文件夹」写出新批次。")
         elif (st.get("collect") or {}).get("gates_ok"):
             self.show_panel()
             self.set_state(st.get("error") or "上次未完成", WARN)
@@ -1039,6 +1124,8 @@ class App:
                     if seq is not None and seq != self._env_seq:
                         continue        # 丢弃过期的环境检查结果
                     self.apply_env(data, preserve_state=preserve_state)
+                elif kind == "data_refreshed":
+                    self._apply_data_refresh(payload)
                 elif kind == "retry_done":
                     self._finish(payload, mode="retry")
                 elif kind == "export_done":

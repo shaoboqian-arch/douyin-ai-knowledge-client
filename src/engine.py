@@ -303,7 +303,7 @@ def status(project_dir=None, cfg=None):
 
 # ---------------------------------------------------------------- 预检
 def preflight(frm="", to="", project_dir=None):
-    """只读。统计范围内的条目与待加工数量，不写任何文件。"""
+    """只读。统计范围内的条目与待加工明细，不写任何文件。"""
     ok, frm, to, err = parse_range(frm, to)
     if not ok:
         return {"ok": False, "error": err}
@@ -318,19 +318,28 @@ def preflight(frm="", to="", project_dir=None):
     except (OSError, ValueError) as e:
         return {"ok": False, "error": str(e)}
     picked = [r for r in rows if manifest.in_range(r, frm, to)]
+    picked.sort(
+        key=lambda r: (manifest.parse_date(r.get("发布时间")) or "0000-00-00",
+                       str(r.get("作品ID") or "")),
+        reverse=True,
+    )
     concepts = load_concepts(project)
     tdir = os.path.join(project, "work", "transcripts")
     by_type = {"视频": 0, "图集": 0}
     by_sub = {}
+    stats = {g: {"total": 0, "ok": 0, "gap": 0} for g in ("video", "album", "ai")}
+    gaps = []
     ai = pending = gap = 0
-    for r in picked:
+    for idx, r in enumerate(picked, 1):
+        seq = f"{idx:03d}"
         k = str(r.get("类型") or "")
-        by_type["图集" if k == "图集" else "视频"] += 1
+        kind = "图集" if k == "图集" else "视频"
+        by_type[kind] += 1
         a = str(r.get("AI相关") or "").strip()
-        wid0 = str(r.get("作品ID") or "")
-        tp = os.path.join(tdir, f"{wid0}.txt")
+        wid = str(r.get("作品ID") or "")
+        tp = os.path.join(tdir, f"{wid}.txt")
         ttext = ""
-        if os.path.isfile(tp):
+        if wid and os.path.isfile(tp):
             try:
                 ttext = open(tp, encoding="utf-8", errors="replace").read()
             except OSError:
@@ -338,21 +347,40 @@ def preflight(frm="", to="", project_dir=None):
         if a in ("是", "否"):
             name = subcat.classify(r, ttext)["子类别"]
             by_sub[name] = by_sub.get(name, 0) + 1
-        wid = str(r.get("作品ID") or "")
-        reasons = manifest.gap_reasons(
-            r, "图集" if k == "图集" else "视频", concepts.get(wid), ttext)
+        reasons = manifest.gap_reasons(r, kind, concepts.get(wid), ttext)
+        bucket = "album" if kind == "图集" else "video"
+        stats[bucket]["total"] += 1
         if a == "是":
             ai += 1
+            stats["ai"]["total"] += 1
         elif a not in ("否",):
             pending += 1
         if reasons:
             gap += 1
+            stats[bucket]["gap"] += 1
+            if a == "是":
+                stats["ai"]["gap"] += 1
+            gaps.append({
+                "序号": seq,
+                "作品ID": wid,
+                "标题": str(r.get("标题/文案") or "")[:80],
+                "作品链接": str(r.get("作品链接") or "").strip(),
+                "原因": "、".join(reasons),
+                "建议": "在项目里对该条跑 AI 判定 / 转写 / 介绍 / 概念标引，"
+                        "补齐后点「刷新数据」核对状态，或点「导出文件夹」写出新批次",
+            })
+        else:
+            stats[bucket]["ok"] += 1
+            if a == "是":
+                stats["ai"]["ok"] += 1
     return {
         "ok": True, "from": frm, "to": to,
         "total": len(rows), "in_range": len(picked),
         "by_type": by_type,
         "by_sub": sorted(({"子类别": k, "条数": v} for k, v in by_sub.items()),
                          key=lambda x: -x["条数"]),
+        "stats": stats,
+        "gaps": gaps,
         "ai": ai, "ai_pending": pending, "gap": gap,
         "kb_dir": st["kb_dir"],
         "elapsed_ms": int((dt.datetime.now() - t0).total_seconds() * 1000),
@@ -639,7 +667,7 @@ def export_only(dest, frm="", to="", on_event=None, on_progress=None, project_di
         rows = load_rows(st["project_dir"])
     except FileNotFoundError:
         return {"ok": False,
-                "error": "还没有整理结果：请先点右上角「全仓同步」跑一次，再用「仅导出」"}
+                "error": "还没有整理结果：请先点右上角「全仓同步」跑一次，再用「导出文件夹」"}
     except (OSError, ValueError) as e:
         return {"ok": False, "error": f"读取整理结果失败：{e}"}
     os.makedirs(dest, exist_ok=True)

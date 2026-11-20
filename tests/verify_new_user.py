@@ -2,10 +2,10 @@
 """新用户路径复检：没有设置文件、没有整理结果时的首启 / 初始化 / 首次操作。
 
 覆盖：
-  · 首启主按钮是「初始化本机环境」，仅导出不可用
+  · 首启主按钮是「初始化本机环境」，导出文件夹不可用
   · 初始化页自动填入项目与知识库；未校验账号时完成按钮不可用
   · 校验 → 采用 → 完成 后写盘，主窗口变为就绪
-  · 没有 rows_merged 时，仅导出给出人话提示而不是路径报错
+  · 没有 rows_merged 时，导出文件夹给出人话提示而不是路径报错
   · 范围 0 条时全仓同步不启动（二次确认取消）
   · 未安装 Obsidian：开关禁用、关闭知识库后仍可就绪
 """
@@ -83,7 +83,7 @@ def main():
         print("== 首启 ==")
         check("首次启动按钮为初始化", app.btn.cget("text") == "初始化本机环境",
               app.btn.cget("text"))
-        check("首次启动仅导出不可用", app.export_btn.cget("state") == "disabled")
+        check("首次启动导出文件夹不可用", app.export_btn.cget("state") == "disabled")
         check("状态写明缺少项目目录", "项目目录" in app.state.cget("text"),
               app.state.cget("text"))
         check("项目目录外不再赘述其它缺失",
@@ -135,13 +135,13 @@ def main():
         print("== 就绪后 ==")
         check("主按钮变为全仓同步", app.btn.cget("text") == "⚠️ 全仓同步",
               app.btn.cget("text"))
-        check("仅导出可用", app.export_btn.cget("state") == "normal")
+        check("导出文件夹可用", app.export_btn.cget("state") == "normal")
         check("状态显示就绪", "已就绪" in app.state.cget("text"), app.state.cget("text"))
 
         print("== 首次提示 ==")
         check("已有数据时不显示首启提示", not app.first_hint.winfo_manager(),
               app.first_hint.cget("text"))
-        check("仅导出此时可用", app.export_btn.cget("state") == "normal")
+        check("导出文件夹此时可用", app.export_btn.cget("state") == "normal")
 
         print("== 首次放数据前 ==")
         app.frm.delete(0, "end"); app.frm.insert(0, "2026-11-01")
@@ -159,7 +159,7 @@ def main():
         check("取消确认后不进入忙碌", app.busy is False)
         check("确实弹过二次确认", len(seen["ask"]) >= 1, str(seen["ask"]))
 
-        print("== 没有整理结果时仅导出 ==")
+        print("== 没有整理结果时导出文件夹 ==")
         empty = tempfile.mkdtemp(prefix="dysync-empty-")
         empty_project, _ = _fixture.make_project(empty)
         os.remove(os.path.join(empty_project, "work", "rows_merged.json"))
@@ -179,7 +179,7 @@ def main():
               app.first_hint.cget("text"))
         check("首启提示说明先做全仓同步",
               "全仓同步" in app.first_hint.cget("text"), app.first_hint.cget("text"))
-        check("无整理结果时仅导出禁用", app.export_btn.cget("state") == "disabled")
+        check("无整理结果时导出文件夹禁用", app.export_btn.cget("state") == "disabled")
 
         print("== 未安装 Obsidian ==")
         orig_find = detect.find_obsidian

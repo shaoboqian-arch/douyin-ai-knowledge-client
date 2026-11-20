@@ -5,7 +5,7 @@ import queue
 import sys
 import threading
 
-VERSION = "0.1.8"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
+VERSION = "0.2.0"          # 唯一版本真源：构建 / 界面 / MCP / 测试都从这里读
 APP_NAME = "抖音收藏整理"
 MCP_SERVER_NAME = "douyin-fav-sync"
 EXE_NAME = "抖音收藏整理.exe"
@@ -189,7 +189,7 @@ def build_ai_patch_prompt(gaps, project_dir=""):
     lines += [
         "",
         "补齐完成后，请在项目目录依次执行 make_tables.py、gen_obsidian.py、"
-        "audit_obsidian.py，或回到客户端点击「仅导出」刷新交付批次。",
+        "audit_obsidian.py，然后回到客户端点「刷新数据」核对状态，或点「导出文件夹」写出新交付批次。",
     ]
     return "\n".join(lines)
 

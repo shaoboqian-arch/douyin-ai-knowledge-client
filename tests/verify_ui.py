@@ -95,18 +95,23 @@ def main():
     check("窗口标题含应用名与版本", APP_NAME in root.title() and VERSION in root.title(), root.title())
     check("窗口宽度 640", root.winfo_width() >= 640, str(root.winfo_width()))
     vis = texts(root)
-    for label in ("导出到", "作品发布日期", "⚠️ 全仓同步", "仅导出", "设置"):
+    for label in ("导出到", "作品发布日期", "⚠️ 全仓同步", "刷新数据", "导出文件夹", "设置"):
         check(f"常驻元素存在：{label}", label in vis, str(vis[:12]))
     long_lines = [ln for t in vis for ln in str(t).splitlines() if len(ln) > 42]
     check("没有标语式长文案", not long_lines, str(long_lines[:3]))
     check("初始不展开进度表", not app.panel_visible)
     check("初始无提示块", not app.hint_visible)
     check("初始按钮为全仓同步", app.btn.cget("text") == "⚠️ 全仓同步")
-    check("存在仅导出按钮", app.export_btn.cget("text") == "仅导出")
+    check("存在刷新数据按钮", app.refresh_btn.cget("text") == "刷新数据")
+    check("存在导出文件夹按钮", app.export_btn.cget("text") == "导出文件夹")
+    check("存在打开文件夹按钮文案", app.open_btn.cget("text") == "打开文件夹")
+    check("面板无收起按钮", "收起" not in texts(app.panel))
 
     print("== 进度表渲染 ==")
     app.show_panel()
+    app.refresh_table()
     root.update()
+    check("0 待加工时不展示空表格", app.tree.winfo_manager() == "" and app.gap_empty.winfo_manager() == "grid")
     check("阶段徽标 6 个", len(app.badges) == len(PHASES))
     app.set_phase("collect")
     root.update()
@@ -125,6 +130,7 @@ def main():
     check("图集计数 1", app.stats["album"]["total"] == 1)
     check("AI 子集计数 2", app.stats["ai"]["total"] == 2, str(app.stats["ai"]))
     check("待加工行数 1", len(app.gaps) == 1)
+    check("有待加工时展示列表", app.tree.winfo_manager() == "grid" and app.gap_empty.winfo_manager() == "")
     check("待加工标题写入表格", app.gap_title.cget("text").startswith("待加工 1"),
           app.gap_title.cget("text"))
     check("进度条推进到 4/4", app.prog._value == 4 and app.prog._maximum == 4,
